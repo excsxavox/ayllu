@@ -1,0 +1,73 @@
+%% AYLLUU — puertos del servidor (referencia para Cursor y deploy)
+%% Los procesos internos mantienen los mismos puertos que en local.
+%% Afuera solo se publican 80/443. Postgres y Redis no salen a internet.
+
+flowchart TB
+  subgraph Internet["Internet"]
+    Cliente["Cliente WhatsApp"]
+    Meta["Meta Cloud API"]
+    Navegador["Navegador / tablet de piso"]
+  end
+
+  subgraph Proxy["Proxy del servidor — 80 y 443"]
+    Caddy["Caddy o Nginx<br/>HTTPS"]
+  end
+
+  subgraph Apps["Procesos AYLLUU — no abrir al mundo"]
+    WA["Panel WhatsApp<br/>:3000<br/>Bandeja, CRM, catálogo, bot UI"]
+    API["API Nest<br/>:3001<br/>Auth, webhook, bot, CRM, reservas"]
+    Sitio["Sitio público<br/>:3002<br/>Página del lodge — demo de reserva"]
+    Piso["Piso / móvil<br/>:3005<br/>Reservas a mano en el local"]
+  end
+
+  subgraph Datos["Datos — solo localhost"]
+    PG["Postgres + pgvector<br/>host 5433 → contenedor 5432"]
+    Redis["Redis BullMQ<br/>:6379<br/>Cola de mensajes inbound"]
+  end
+
+  Cliente --> Meta
+  Meta -->|"POST /webhooks/whatsapp"| Caddy
+  Navegador --> Caddy
+
+  Caddy -->|"api.DOMINIO → :3001"| API
+  Caddy -->|"wa.DOMINIO → :3000"| WA
+  Caddy -->|"piso.DOMINIO → :3005"| Piso
+  Caddy -->|"www.DOMINIO → :3002"| Sitio
+
+  WA -->|"NEXT_PUBLIC_API_URL"| API
+  Piso -->|"/backend → API"| API
+  API --> PG
+  API --> Redis
+  Redis -->|"inbound queue"| API
+  API -->|"send WhatsApp"| Meta
+
+%% --- Tabla de puertos ---
+%%
+%% Público
+%% 80    HTTP → redirige a 443
+%% 443   HTTPS del proxy
+%%
+%% Interno (escuchan las apps)
+%% 3000  Panel WhatsApp     pnpm --filter @aylluu/web start
+%% 3001  API                PORT=3001  health: GET /health
+%%                         webhook: GET+POST /webhooks/whatsapp
+%% 3002  Sitio público      SITIO_PORT=3002  pnpm --filter @aylluu/sitio dev
+%% 3005  Piso               NEXT_PUBLIC_AYLLUU_APP=movil  next start --port 3005
+%%
+%% Solo localhost
+%% 5433  Postgres (compose mapea 5433:5432)  DATABASE_URL
+%% 6379  Redis                                REDIS_URL
+%%
+%% Variables en el servidor
+%% WEB_ORIGIN=https://wa.DOMINIO,https://piso.DOMINIO
+%% NEXT_PUBLIC_API_URL=https://api.DOMINIO
+%% DATABASE_URL=postgresql://USUARIO:CLAVE@127.0.0.1:5433/aylluu
+%% REDIS_URL=redis://127.0.0.1:6379
+%% PORT=3001
+%%
+%% Rutas de la API :3001
+%% GET  /health                 ¿está viva?
+%% GET  /webhooks/whatsapp      verificación Meta
+%% POST /webhooks/whatsapp      mensajes inbound
+%% /auth /contacts /conversations /bookings /channels
+%% /settings/whatsapp /settings/ai /uploads

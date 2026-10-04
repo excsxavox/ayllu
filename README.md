@@ -31,7 +31,7 @@ pnpm dev
   - `alpha@aylluu.local` — solo Alpha
   - `beta@aylluu.local` — solo Beta
 
-En el resumen puedes simular un mensaje inbound sin Meta. Para WhatsApp real, configura tokens en **Ajustes** y apunta el webhook a `/webhooks/whatsapp`. Checklist Meta: [docs/META_CHECKLIST.md](docs/META_CHECKLIST.md). Onboarding de un cliente nuevo: [docs/MANUAL_NUEVO_CLIENTE_WHATSAPP.md](docs/MANUAL_NUEVO_CLIENTE_WHATSAPP.md).
+En el resumen puedes simular un mensaje inbound sin Meta. Para WhatsApp real, configura tokens en **Ajustes** y apunta el webhook a `/webhooks/whatsapp`. Checklist Meta: [docs/META_CHECKLIST.md](docs/META_CHECKLIST.md). Onboarding de un cliente nuevo: [docs/MANUAL_NUEVO_CLIENTE_WHATSAPP.md](docs/MANUAL_NUEVO_CLIENTE_WHATSAPP.md). Puertos del servidor: [docs/PUERTOS_SERVIDOR.mmd](docs/PUERTOS_SERVIDOR.mmd).
 
 ## Estructura
 
