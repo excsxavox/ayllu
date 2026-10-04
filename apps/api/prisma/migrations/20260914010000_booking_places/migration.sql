@@ -1,0 +1,1 @@
+ALTER TABLE "BookingSettings" ADD COLUMN IF NOT EXISTS "places" JSONB NOT NULL DEFAULT '[]';

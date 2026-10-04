@@ -1,0 +1,2 @@
+ALTER TYPE "DiscountType" ADD VALUE 'BOGO';
+ALTER TABLE "Promotion" ADD COLUMN "imageUrls" TEXT[] DEFAULT ARRAY[]::TEXT[];

@@ -1,0 +1,7 @@
+{
+  "name": "@aylluu/sitio",
+  "private": true,
+  "scripts": {
+    "dev": "node server.mjs"
+  }
+}

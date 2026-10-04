@@ -1,0 +1,18 @@
+{
+  "name": "AYLLUU Piso",
+  "short_name": "Piso",
+  "description": "Gestión interna de reservas manuales en el lugar",
+  "start_url": "/floor",
+  "display": "standalone",
+  "background_color": "#102e2c",
+  "theme_color": "#102e2c",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "/floor-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

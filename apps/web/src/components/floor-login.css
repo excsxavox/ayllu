@@ -1,0 +1,165 @@
+.ayllu-login {
+  --verde: #194d3e;
+  --texto: #172b25;
+  --gris: #64716c;
+  --borde: #dce5df;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 100dvh;
+  margin: 0;
+  color: var(--texto);
+  background: white;
+  font: 16px/1.5 system-ui, sans-serif;
+}
+.ayllu-login * { box-sizing: border-box; }
+.ayllu-login h1,
+.ayllu-login p { margin: 0; }
+.ayllu-login button,
+.ayllu-login input { font: inherit; }
+.ayllu-login button { cursor: pointer; }
+.ayllu-login button:focus-visible,
+.ayllu-login input:focus-visible {
+  outline: 3px solid #60a487;
+  outline-offset: 3px;
+}
+
+.ayllu-login .paisaje {
+  position: relative;
+  min-height: 100dvh;
+  background: var(--verde);
+  overflow: hidden;
+}
+.ayllu-login .paisaje img {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ayllu-login .marca {
+  position: absolute;
+  top: 32px;
+  left: 32px;
+  margin: 0;
+  padding: 12px 22px;
+  border-radius: 12px;
+  background: white;
+  color: var(--verde);
+  font-size: 28px;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+}
+
+.ayllu-login .panel {
+  display: grid;
+  place-items: center;
+  padding: 48px;
+}
+.ayllu-login form {
+  width: 100%;
+  max-width: 400px;
+}
+.ayllu-login .etiqueta {
+  display: block;
+  color: var(--verde);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.ayllu-login h1 {
+  margin: 12px 0 8px;
+  font-size: 30px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+.ayllu-login .descripcion {
+  margin: 0 0 32px;
+  color: var(--gris);
+}
+.ayllu-login label {
+  display: block;
+  margin: 20px 0 8px;
+  font-size: 15px;
+}
+.ayllu-login input {
+  width: 100%;
+  min-width: 0;
+  height: 52px;
+  padding: 12px 14px;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  background: white;
+  color: var(--texto);
+}
+.ayllu-login .clave { position: relative; }
+.ayllu-login .clave input { padding-right: 82px; }
+.ayllu-login .ver {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--verde);
+  font-size: 14px;
+}
+.ayllu-login .entrar {
+  width: 100%;
+  min-height: 52px;
+  margin-top: 28px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--verde);
+  color: white;
+  font-weight: 650;
+}
+.ayllu-login .entrar:hover:not(:disabled) { background: #103c30; }
+.ayllu-login .entrar:disabled { opacity: 0.55; cursor: not-allowed; }
+.ayllu-login .recuperar {
+  display: block;
+  min-height: 44px;
+  margin: 12px auto;
+  border: 0;
+  background: transparent;
+  color: var(--verde);
+  text-decoration: underline;
+  font-size: 14px;
+}
+.ayllu-login #mensaje {
+  margin: 16px 0;
+  color: var(--verde);
+  font-size: 14px;
+}
+.ayllu-login #mensaje:empty { display: none; }
+.ayllu-login .nota {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--borde);
+  text-align: center;
+  color: var(--gris);
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .ayllu-login { grid-template-columns: 1fr; }
+  .ayllu-login .paisaje {
+    min-height: 0;
+    height: 32dvh;
+    max-height: 300px;
+  }
+  .ayllu-login .paisaje img { object-position: 50% 65%; }
+  .ayllu-login .marca {
+    top: 24px;
+    left: 24px;
+    font-size: 24px;
+  }
+  .ayllu-login .panel {
+    position: relative;
+    margin-top: -20px;
+    padding: 32px 24px;
+    border-radius: 24px 24px 0 0;
+    background: white;
+  }
+  .ayllu-login h1 { font-size: 27px; }
+}
