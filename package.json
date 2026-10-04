@@ -18,6 +18,7 @@
     "dev:sitio": "pnpm --filter @aylluu/sitio dev",
     "dev:movil": "pnpm --filter @aylluu/web dev:movil",
     "build": "pnpm --filter @aylluu/shared build && pnpm --filter @aylluu/api build && pnpm --filter @aylluu/web build",
+    "build:movil": "pnpm --filter @aylluu/shared build && pnpm --filter @aylluu/web build:movil",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @aylluu/api prisma:migrate",

@@ -1,9 +1,9 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { api, setSession } from "@/lib/api";
+import { getSession, signIn } from "@/lib/api";
 import { IS_FLOOR_APP } from "@/lib/app-mode";
 import { useMounted } from "@/lib/use-mounted";
 import { BrandMark, Icon } from "@/components/icons";
@@ -21,28 +21,17 @@ function WorkspaceLogin() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  useEffect(() => {
+    if (getSession()?.accessToken) router.replace("/dashboard");
+  }, [router]);
+
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     setError("");
     const form = new FormData(e.currentTarget);
     try {
-      const res = await api<{
-        accessToken: string;
-        refreshToken: string;
-        defaultCompanyId: string | null;
-      }>("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({
-          email: form.get("email"),
-          password: form.get("password"),
-        }),
-      });
-      setSession({
-        accessToken: res.accessToken,
-        refreshToken: res.refreshToken,
-        companyId: res.defaultCompanyId,
-      });
+      await signIn(String(form.get("email") ?? ""), String(form.get("password") ?? ""));
       const next = new URLSearchParams(window.location.search).get("next");
       router.replace(next === "/floor" ? "/floor" : "/dashboard");
     } catch (err) {
@@ -111,7 +100,7 @@ function WorkspaceLogin() {
           <p className="muted">Entra a tu espacio de trabajo para continuar.</p>
           <label className="field">
             <span>Correo electrónico</span>
-            <input name="email" type="email" autoComplete="username" required defaultValue="admin@aylluu.local" />
+            <input name="email" type="email" autoComplete="username" required placeholder="tu@correo.com" />
           </label>
           <label className="field">
             <span>Contraseña</span>
@@ -121,7 +110,8 @@ function WorkspaceLogin() {
                 type={showPassword ? "text" : "password"}
                 autoComplete="current-password"
                 required
-                defaultValue="Admin1234"
+                minLength={8}
+                placeholder="Tu contraseña"
               />
               <button
                 type="button"

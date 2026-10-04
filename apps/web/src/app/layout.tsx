@@ -1,13 +1,6 @@
 import type { Metadata } from "next";
-import { DM_Sans } from "next/font/google";
 import { IS_FLOOR_APP } from "@/lib/app-mode";
 import "./globals.css";
-
-const sans = DM_Sans({
-  subsets: ["latin"],
-  variable: "--font-body",
-  weight: ["400", "500", "600", "700"],
-});
 
 export const metadata: Metadata = {
   title: IS_FLOOR_APP ? "AYLLU Piso — Reservas del equipo" : "Aylluu WA — Operaciones WhatsApp",
@@ -34,8 +27,8 @@ export const viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es" translate="no" suppressHydrationWarning className={`notranslate ${sans.variable}`}>
-      <body translate="no" className="notranslate" suppressHydrationWarning style={{ fontFamily: "var(--font-body), 'DM Sans', sans-serif" }}>
+    <html lang="es" translate="no" suppressHydrationWarning className="notranslate">
+      <body translate="no" className="notranslate" suppressHydrationWarning style={{ fontFamily: "var(--font-body), 'DM Sans', 'Segoe UI', system-ui, sans-serif" }}>
         {children}
       </body>
     </html>

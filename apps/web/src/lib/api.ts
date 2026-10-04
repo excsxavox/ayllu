@@ -1,4 +1,5 @@
 import { ALL_PREFETCH, getInflight, invalidateCache, peekCache, setInflight, writeCache } from "@/lib/query-cache";
+import { looksLikeJwt } from "@/lib/jwt";
 
 const REMOTE_API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -40,11 +41,42 @@ const KEY = "aylluu.session";
 export function getSession(): Stored | null {
   if (typeof window === "undefined") return null;
   const raw = localStorage.getItem(KEY);
-  return raw ? (JSON.parse(raw) as Stored) : null;
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw) as Stored;
+    if (!looksLikeJwt(data.accessToken) || !looksLikeJwt(data.refreshToken)) {
+      localStorage.removeItem(KEY);
+      return null;
+    }
+    return data;
+  } catch {
+    localStorage.removeItem(KEY);
+    return null;
+  }
 }
 
 export function setSession(data: Stored) {
+  if (!looksLikeJwt(data.accessToken) || !looksLikeJwt(data.refreshToken)) {
+    throw new Error("La sesión no devolvió un JWT válido.");
+  }
   localStorage.setItem(KEY, JSON.stringify(data));
+}
+
+export async function signIn(email: string, password: string) {
+  const res = await api<{
+    accessToken: string;
+    refreshToken: string;
+    defaultCompanyId: string | null;
+  }>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim(), password }),
+  });
+  setSession({
+    accessToken: res.accessToken,
+    refreshToken: res.refreshToken,
+    companyId: res.defaultCompanyId,
+  });
+  return res;
 }
 
 export function clearSession() {

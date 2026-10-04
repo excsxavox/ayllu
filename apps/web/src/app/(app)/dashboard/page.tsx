@@ -94,7 +94,7 @@ export default function DashboardPage() {
     };
   }, [examples, period, stats]);
 
-  const attention = examples ? SAMPLE_ATTENTION : (stats?.attention ?? []);
+  const attention = (examples ? SAMPLE_ATTENTION : stats?.attention) ?? [];
   const shown = attention.slice(0, 5);
   const assistant = examples
     ? { replyMode: "AUTO" as const, whatsappConnected: true, lastSyncAt: new Date(Date.now() - 60_000).toISOString() }

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { movilEnv } from "./movil-env.mjs";
 
 const cwd = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const child = spawn("pnpm", ["exec", "next", "dev", "--port", "3005"], {
@@ -9,9 +10,7 @@ const child = spawn("pnpm", ["exec", "next", "dev", "--port", "3005"], {
   shell: true,
   env: {
     ...process.env,
-    AYLLUU_APP: "movil",
-    NEXT_PUBLIC_AYLLUU_APP: "movil",
-    PORT: "3005",
+    ...movilEnv(),
   },
 });
 

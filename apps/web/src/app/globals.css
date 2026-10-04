@@ -28,6 +28,7 @@
   --radius-lg: 12px;
   --radius-xl: 14px;
 
+  --font-body: "DM Sans", "Segoe UI", system-ui, sans-serif;
   --night: #112f2e;
   --night-2: #102e2e;
   --foam: var(--background);

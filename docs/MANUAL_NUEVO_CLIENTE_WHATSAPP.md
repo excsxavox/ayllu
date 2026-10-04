@@ -89,10 +89,16 @@ Hazlo con el cliente o con su agencia. En developers.facebook.com:
    - App Secret
 5. Inventa un **verify token** (frase larga, solo tuya). El mismo valor va en Meta y en AYLLUU.
 
-En Meta, el webhook apunta a la API, no al panel:
+En Meta, el webhook apunta a la API, no al panel. Servidor actual:
 
 ```
-https://<dominio-de-la-api>/webhooks/whatsapp
+http://api.84.247.178.247.sslip.io/webhooks/whatsapp
+```
+
+Meta exige HTTPS para producción. Mientras el servidor esté en HTTP, usa un túnel HTTPS o pon certificado. Cuando haya HTTPS:
+
+```
+https://api.84.247.178.247.sslip.io/webhooks/whatsapp
 ```
 
 En local, un túnel hacia el puerto 3001:

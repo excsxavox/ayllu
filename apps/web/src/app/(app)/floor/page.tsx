@@ -1,3 +1,6 @@
 "use client";
 
-export { FloorApp as default } from "@/components/floor-app";
+/** Ruta Next de /floor. El piso real lo monta el shell con sesión. */
+export default function FloorPage() {
+  return null;
+}

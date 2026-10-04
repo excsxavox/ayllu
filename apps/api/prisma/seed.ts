@@ -710,10 +710,7 @@ async function main() {
     });
   }
 
-  console.log("Seed OK");
-  console.log("  admin@aylluu.local / Admin1234  (platform admin, ambas empresas)");
-  console.log("  alpha@aylluu.local / Admin1234  (solo Alpha)");
-  console.log("  beta@aylluu.local  / Admin1234  (solo Beta)");
+  console.log("Seed OK. Entra con el correo y la contraseña de tu usuario.");
   console.log("  Piso (reservas en el lugar): http://localhost:3005");
 }
 

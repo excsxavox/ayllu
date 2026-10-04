@@ -1,8 +1,8 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, setSession } from "@/lib/api";
+import { getSession, signIn } from "@/lib/api";
 import { useMounted } from "@/lib/use-mounted";
 import { LoadingState } from "@/components/loading-state";
 import "./floor-login.css";
@@ -15,6 +15,10 @@ export function FloorLogin() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  useEffect(() => {
+    if (getSession()?.accessToken) router.replace("/floor");
+  }, [router]);
+
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
@@ -22,22 +26,7 @@ export function FloorLogin() {
     setHint("");
     const form = new FormData(e.currentTarget);
     try {
-      const res = await api<{
-        accessToken: string;
-        refreshToken: string;
-        defaultCompanyId: string | null;
-      }>("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({
-          email: form.get("email"),
-          password: form.get("password"),
-        }),
-      });
-      setSession({
-        accessToken: res.accessToken,
-        refreshToken: res.refreshToken,
-        companyId: res.defaultCompanyId,
-      });
+      await signIn(String(form.get("email") ?? ""), String(form.get("password") ?? ""));
       router.replace("/floor");
     } catch (err) {
       setError((err as Error).message);
@@ -78,7 +67,6 @@ export function FloorLogin() {
             placeholder="equipo@ayllu.ec"
             maxLength={120}
             required
-            defaultValue="admin@aylluu.local"
           />
 
           <label htmlFor="password">Contraseña</label>
@@ -88,9 +76,9 @@ export function FloorLogin() {
               name="password"
               type={showPassword ? "text" : "password"}
               autoComplete="current-password"
-              minLength={6}
+              minLength={8}
               required
-              defaultValue="Admin1234"
+              placeholder="Tu contraseña"
             />
             <button
               className="ver"

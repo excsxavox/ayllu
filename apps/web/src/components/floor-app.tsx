@@ -137,7 +137,7 @@ function agendaStatus(b: Booking, today: string, timeZone: string) {
   if (b.status === "CONFIRMED") return { key: "confirmada", label: "Confirmada" };
   return { key: badgeClass(b.status), label: STATUS[b.status] };
 }
-function live(status: Status) {
+function live(status: Status): boolean {
   return status === "PENDING" || status === "CONFIRMED";
 }
 function what(b: Booking) {
@@ -767,7 +767,7 @@ export function FloorApp({
               >
                 <img src="/lago-ilustrativo.png" width={1254} height={1254} alt="Vista aérea ilustrativa del lago con glampings, restaurante, muelle, pesca, senderos, juegos y parqueadero" draggable={false} />
                 {places.map((z) => {
-                  const list = (byZone.get(z.id) ?? []).filter(live);
+                  const list = (byZone.get(z.id) ?? []).filter((b) => live(b.status));
                   const tone = pinTone(list);
                   return (
                     <button

@@ -6,7 +6,9 @@
     "dev": "next dev --port 3000",
     "dev:movil": "node scripts/dev-movil.mjs",
     "build": "next build",
-    "start": "next start --port 3000"
+    "build:movil": "node scripts/build-movil.mjs",
+    "start": "next start --port 3000",
+    "start:movil": "node scripts/start-movil.mjs"
   },
   "dependencies": {
     "@aylluu/shared": "workspace:*",
