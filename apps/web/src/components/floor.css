@@ -1432,6 +1432,120 @@ body:has(.ayllu-m.is-map) {
 .ayllu-m .mas-title { font-size: 1.6rem; margin-bottom: 16px; }
 .ayllu-m .dot-pin { font-size: 0.8rem; font-weight: 750; }
 
+.ayllu-m .floor-chat-lead {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  margin: 0 0 18px;
+}
+.ayllu-m .floor-chat-section h2 {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 18px 0 10px;
+}
+.ayllu-m .floor-chat-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+.ayllu-m .floor-chat-card.unread {
+  border-color: #c8dcc0;
+  background: #f6faf3;
+}
+.ayllu-m .floor-chat-card strong {
+  display: block;
+  font-size: 1rem;
+  margin-bottom: 6px;
+}
+.ayllu-m .floor-chat-card p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+.ayllu-m .floor-chat-card small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.ayllu-m .floor-chat {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - 120px);
+}
+.ayllu-m .floor-chat-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+.ayllu-m .floor-chat-head strong {
+  display: block;
+  font-size: 1rem;
+}
+.ayllu-m .floor-chat-head small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.ayllu-m .floor-chat-head .btn.compact {
+  margin-left: auto;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+}
+.ayllu-m .floor-chat-thread {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 2px 16px;
+  min-height: 280px;
+}
+.ayllu-m .floor-chat-bubble {
+  max-width: 88%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+.ayllu-m .floor-chat-bubble.in {
+  align-self: flex-start;
+  background: #eef2ea;
+}
+.ayllu-m .floor-chat-bubble.out {
+  align-self: flex-end;
+  background: #dfebd6;
+}
+.ayllu-m .floor-chat-bubble time {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.ayllu-m .floor-chat-compose {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.ayllu-m .floor-chat-compose input {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font: inherit;
+}
+
 @media (min-width: 720px) {
   .ayllu-m { max-width: 480px; margin: 0 auto; box-shadow: 0 0 0 1px var(--line); }
   .ayllu-m .bottom-nav,

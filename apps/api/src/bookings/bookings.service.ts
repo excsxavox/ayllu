@@ -9,6 +9,7 @@ import {
   CreateBookingInput,
   UpdateBookingInput,
   DEFAULT_BOOKING_PLACES,
+  filterCabanaPlaces,
   normalizeBookingPlaces,
   type BookingCustomField,
   type BookingWeeklyHours,
@@ -328,6 +329,135 @@ export class BookingsService {
       booked,
       maxPerDay: settings.maxPerDay,
       remaining: Math.max(0, settings.maxPerDay - booked),
+    };
+  }
+
+  /**
+   * Agenda pública para el sitio: mismos places/unitCount del móvil
+   * y ocupación del día (tags [u:placeId:n] o reservas que nombran el recurso).
+   */
+  async publicAgenda(slug: string, from: string, to: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      throw new BadRequestException("Usa fechas YYYY-MM-DD");
+    }
+    if (from > to) throw new BadRequestException("El rango de fechas no es válido");
+    const company = await this.prisma.company.findFirst({
+      where: { slug, bookingsEnabled: true },
+      select: { id: true, name: true, slug: true, timezone: true },
+    });
+    if (!company) throw new NotFoundException("Empresa no encontrada");
+    const settings = await this.ensureSettings(company.id);
+    const places = filterCabanaPlaces(normalizeBookingPlaces(settings.places));
+    const horizon = Math.max(1, Math.min(180, settings.horizonDays || 14));
+    const today = this.calendarDateInZone(new Date(), company.timezone);
+    const maxDay = this.addCalendarDays(today, horizon - 1);
+    const startDay = from < today ? today : from;
+    const endDay = to > maxDay ? maxDay : to;
+    if (startDay > endDay) {
+      return {
+        company: { name: company.name, slug: company.slug, timezone: company.timezone },
+        places: places.map((place) => ({
+          id: place.id,
+          name: place.name,
+          unitCount: place.unitCount,
+          trackGuests: place.trackGuests ?? false,
+        })),
+        days: {} as Record<string, Record<string, { unitCount: number; free: number; occupied: number }>>,
+        from: startDay,
+        to: endDay,
+        horizonDays: horizon,
+      };
+    }
+
+    const rangeStart = this.companyLocalToUtc(startDay, "00:00", company.timezone);
+    const rangeEnd = this.companyLocalToUtc(this.nextCalendarDay(endDay), "00:00", company.timezone);
+    const rows = await this.prisma.booking.findMany({
+      where: {
+        companyId: company.id,
+        status: { in: ["PENDING", "CONFIRMED"] },
+        startsAt: { gte: rangeStart, lt: rangeEnd },
+      },
+      select: {
+        id: true,
+        startsAt: true,
+        notes: true,
+        service: { select: { name: true } },
+        product: { select: { name: true } },
+      },
+    });
+
+    const days: Record<string, Record<string, { unitCount: number; free: number; occupied: number }>> = {};
+    for (let day = startDay; day <= endDay; day = this.nextCalendarDay(day)) {
+      days[day] = {};
+      for (const place of places) {
+        days[day][place.id] = { unitCount: place.unitCount, free: place.unitCount, occupied: 0 };
+      }
+    }
+
+    const takenByDay = new Map<string, Map<string, Set<string>>>();
+    for (const row of rows) {
+      const day = this.calendarDateInZone(row.startsAt, company.timezone);
+      if (!days[day]) continue;
+      const blob = `${row.notes ?? ""} ${row.service?.name ?? ""} ${row.product?.name ?? ""}`;
+      for (const place of places) {
+        if (!this.blobUsesPlace(place, blob)) continue;
+        if (!takenByDay.has(day)) takenByDay.set(day, new Map());
+        const byPlace = takenByDay.get(day)!;
+        if (!byPlace.has(place.id)) byPlace.set(place.id, new Set());
+        const set = byPlace.get(place.id)!;
+        const tagged = [...blob.matchAll(new RegExp(`\\[u:${place.id}:(\\d+)\\]`, "gi"))].map((m) => m[1]);
+        if (tagged.length) tagged.forEach((id) => set.add(id));
+        else set.add(`b:${row.id}`);
+      }
+    }
+
+    for (const [day, byPlace] of takenByDay) {
+      for (const [placeId, set] of byPlace) {
+        const cell = days[day]?.[placeId];
+        if (!cell) continue;
+        cell.occupied = Math.min(cell.unitCount, set.size);
+        cell.free = Math.max(0, cell.unitCount - cell.occupied);
+      }
+    }
+
+    return {
+      company: { name: company.name, slug: company.slug, timezone: company.timezone },
+      places: places.map((place) => ({
+        id: place.id,
+        name: place.name,
+        unitCount: place.unitCount,
+        trackGuests: place.trackGuests ?? false,
+      })),
+      days,
+      from: startDay,
+      to: endDay,
+      horizonDays: horizon,
+    };
+  }
+
+  /** Recursos creados en la app (glamping, botes…) y las reservas vivas de ese día. */
+  async dayResources(companyId: string, date: string) {
+    const enabled = await this.isEnabled(companyId);
+    if (!enabled) return null;
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { timezone: true },
+    });
+    if (!company || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+    const settings = await this.ensureSettings(companyId);
+    const start = this.companyLocalToUtc(date, "00:00", company.timezone);
+    const end = this.companyLocalToUtc(this.nextCalendarDay(date), "00:00", company.timezone);
+    const rows = await this.prisma.booking.findMany({
+      where: {
+        companyId,
+        status: { in: ["PENDING", "CONFIRMED"] },
+        startsAt: { gte: start, lt: end },
+      },
+      select: { notes: true, service: { select: { name: true } }, product: { select: { name: true } } },
+    });
+    return {
+      places: normalizeBookingPlaces(settings.places),
+      occupied: rows.map((row) => `${row.notes ?? ""} ${row.service?.name ?? ""} ${row.product?.name ?? ""}`),
     };
   }
 
@@ -656,12 +786,43 @@ export class BookingsService {
   }
 
   private nextCalendarDay(date: string) {
+    return this.addCalendarDays(date, 1);
+  }
+
+  private addCalendarDays(date: string, days: number) {
     const [year, month, day] = date.split("-").map(Number);
-    const next = new Date(Date.UTC(year, month - 1, day + 1));
+    const next = new Date(Date.UTC(year, month - 1, day + days));
     const y = next.getUTCFullYear();
     const m = String(next.getUTCMonth() + 1).padStart(2, "0");
     const d = String(next.getUTCDate()).padStart(2, "0");
     return `${y}-${m}-${d}`;
+  }
+
+  private calendarDateInZone(instant: Date, timeZone: string) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(instant);
+    const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
+    return `${get("year")}-${get("month")}-${get("day")}`;
+  }
+
+  private blobUsesPlace(place: { id: string; name: string }, blob: string) {
+    const text = blob
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "");
+    const id = place.id.toLowerCase();
+    if (text.includes(`[u:${id}:`)) return true;
+    const bits = place.name
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .split(/[^a-z0-9]+/)
+      .filter((word) => word.length > 2);
+    return [id, ...bits].some((key) => key && text.includes(key));
   }
 
   private companyLocalToUtc(date: string, time: string, timeZone: string) {

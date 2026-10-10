@@ -95,7 +95,7 @@ export default function SettingsForm() {
         <h2>WhatsApp</h2>
         <p className="page-lead">
           Credenciales del canal WhatsApp. Abajo configuras las cuentas y links que el bot puede enviar.
-          Webhook: POST http://localhost:3001/webhooks/whatsapp
+          Webhook: POST https://api.innovamf.com/webhooks/whatsapp
         </p>
         <label>
           <span>Proveedor</span>

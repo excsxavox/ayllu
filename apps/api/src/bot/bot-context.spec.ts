@@ -15,6 +15,11 @@ import {
   parseBookingDateHint,
   formatDepositHoldReply,
   asksForReservationDetails,
+  asksForAvailability,
+  bookingUsesPlace,
+  formatAvailabilityReply,
+  isWebBookingLead,
+  matchBookingPlace,
   shouldOfferDeposit,
   wantsStayReservation,
   inferCrmFromMessage,
@@ -182,6 +187,38 @@ describe("reserva con abono", () => {
     expect(asksForReservationDetails("necesito los datos para poder hacer la reserva")).toBe(true);
     expect(shouldOfferDeposit("me pasas los datos para reservar")).toBe(true);
     expect(shouldOfferDeposit("dame el número de cuenta")).toBe(true);
+    expect(asksForAvailability("Pero si tiene disponible para hoy?")).toBe(true);
+    expect(shouldOfferDeposit("Pero si tiene disponible para hoy?")).toBe(false);
+    expect(classifyIntent("Pero si tiene disponible para hoy?").needsBooking).toBe(true);
+    expect(classifyIntent("Pero si tiene disponible para hoy?").needsPayment).toBe(false);
+    const places = [
+      { id: "glamping", name: "Glamping" },
+      { id: "botes", name: "Botes a remo" },
+    ];
+    expect(matchBookingPlace(places, "para 5 personas, glamping")?.id).toBe("glamping");
+    expect(matchBookingPlace(places, "Tiene disponible los gampling")?.id).toBe("glamping");
+    expect(isWebBookingLead("Hola, quiero reservar desde la web:\n• Experiencia: Glamping")).toBe(true);
+    expect(shouldOfferDeposit("Hola, quiero reservar desde la web:\n• Fecha: 2026-10-10")).toBe(false);
+    expect(bookingUsesPlace(places[0], "Glamping G01 · [u:glamping:1]")).toBe(true);
+    expect(bookingUsesPlace(places[0], "mesa del restaurante")).toBe(false);
+    const open = formatAvailabilityReply("es", {
+      date: "2026-10-04",
+      isToday: true,
+      hasRoom: true,
+      placeName: "Glamping",
+    });
+    expect(open).toContain("hoy");
+    expect(open).toContain("Glamping");
+    expect(open).not.toContain("transferencia");
+    expect(open).not.toMatch(/\d/);
+    const full = formatAvailabilityReply("es", {
+      date: "2026-10-04",
+      isToday: true,
+      hasRoom: false,
+      placeName: "Glamping",
+    });
+    expect(full).toContain("ocupado");
+    expect(full).not.toMatch(/\d/);
     expect(classifyIntent("necesito los datos para poder hacer la reserva").needsPayment).toBe(true);
   });
 

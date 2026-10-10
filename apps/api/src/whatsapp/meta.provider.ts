@@ -1,11 +1,17 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
-import { readFile } from "fs/promises";
-import { extname } from "path";
+import { execFile } from "child_process";
+import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
+import { tmpdir } from "os";
+import { extname, join } from "path";
+import { promisify } from "util";
 import { request as httpsRequest } from "https";
+import { request as httpRequest } from "http";
 import { URL } from "url";
 import { NormalizedInboundMessage } from "@aylluu/shared";
 import { WebhookQuery, WhatsAppChannel } from "./provider.interface";
+
+const execFileAsync = promisify(execFile);
 
 
 type MetaChange = {
@@ -125,7 +131,22 @@ export class MetaCloudApiProvider implements WhatsAppChannel {
     if (params.filePath) {
       image.id = await this.uploadLocalImage(params.accessToken, params.phoneNumberId, params.filePath);
     } else if (params.imageUrl && /^https?:\/\//i.test(params.imageUrl) && !isPrivateHost(params.imageUrl)) {
-      image.link = params.imageUrl;
+      const remote = await this.fetchPublic(params.imageUrl);
+      const head = remote.buffer.subarray(0, 12);
+      const isJpeg = head[0] === 0xff && head[1] === 0xd8;
+      const isPng = head[0] === 0x89 && head[1] === 0x50;
+      const isImage = isJpeg || isPng || head.subarray(0, 4).toString() === "RIFF" || head.subarray(0, 3).toString() === "GIF";
+      if (!isImage) throw new Error("La URL no devolvió una imagen");
+      const file = isJpeg || isPng ? remote.buffer : await this.toJpeg(remote.buffer);
+      const mimeType = isPng && file === remote.buffer ? "image/png" : "image/jpeg";
+      this.logger.log(`Foto para WhatsApp: ${mimeType}, ${file.length} bytes`);
+      image.id = await this.uploadBuffer(
+        params.accessToken,
+        params.phoneNumberId,
+        file,
+        mimeType,
+        mimeType === "image/png" ? "photo.png" : "photo.jpg",
+      );
     } else {
       throw new Error("Falta una foto pública o un archivo local");
     }
@@ -249,10 +270,72 @@ export class MetaCloudApiProvider implements WhatsAppChannel {
     });
   }
 
+  private fetchPublic(url: string, redirects = 0): Promise<{ buffer: Buffer; mimeType: string }> {
+    return new Promise((resolve, reject) => {
+      const parsed = new URL(url);
+      const request = parsed.protocol === "http:" ? httpRequest : httpsRequest;
+      const req = request(
+        {
+          hostname: parsed.hostname,
+          path: `${parsed.pathname}${parsed.search}`,
+          method: "GET",
+          headers: { "User-Agent": "Mozilla/5.0", Accept: "image/*,*/*" },
+        },
+        (res) => {
+          const location = res.headers.location;
+          if (location && [301, 302, 303, 307, 308].includes(res.statusCode ?? 0) && redirects < 5) {
+            res.resume();
+            resolve(this.fetchPublic(new URL(location, url).toString(), redirects + 1));
+            return;
+          }
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk) => chunks.push(chunk));
+          res.on("end", () => {
+            if ((res.statusCode ?? 500) >= 400) {
+              reject(new Error(`No se pudo descargar la foto: ${res.statusCode}`));
+              return;
+            }
+            const raw = String(res.headers["content-type"] || "image/jpeg").split(";")[0].trim();
+            resolve({ buffer: Buffer.concat(chunks), mimeType: raw.startsWith("image/") ? raw : "image/jpeg" });
+          });
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+  }
+
+  private async toJpeg(buffer: Buffer): Promise<Buffer> {
+    const dir = await mkdtemp(join(tmpdir(), "aylluu-photo-"));
+    const source = join(dir, "in.bin");
+    const target = join(dir, "out.jpg");
+    try {
+      await writeFile(source, buffer);
+      await execFileAsync("convert", [source, "jpg:" + target]);
+      return await readFile(target);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
   private async uploadLocalImage(accessToken: string, phoneNumberId: string, filePath: string): Promise<string> {
     const file = await readFile(filePath);
     const mimeType = mimeFromPath(filePath);
+    if (mimeType === "image/webp" || mimeType === "image/gif") {
+      const jpeg = await this.toJpeg(file);
+      return this.uploadBuffer(accessToken, phoneNumberId, jpeg, "image/jpeg", "photo.jpg");
+    }
     const filename = filePath.split(/[/\\]/).pop() || "photo.jpg";
+    return this.uploadBuffer(accessToken, phoneNumberId, file, mimeType, filename);
+  }
+
+  private async uploadBuffer(
+    accessToken: string,
+    phoneNumberId: string,
+    file: Buffer,
+    mimeType: string,
+    filename: string,
+  ): Promise<string> {
     const boundary = `----aylluu${randomBytes(8).toString("hex")}`;
     const head = Buffer.from(
       `--${boundary}\r\nContent-Disposition: form-data; name="messaging_product"\r\n\r\nwhatsapp\r\n` +

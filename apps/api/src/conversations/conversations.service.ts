@@ -56,6 +56,12 @@ export class ConversationsService {
 
   async sendFromInbox(companyId: string, userId: string, id: string, text: string) {
     const conversation = await this.get(companyId, id);
+    if (!conversation.humanTakeover) {
+      await this.prisma.conversation.update({
+        where: { id },
+        data: { humanTakeover: true, status: "HUMAN" },
+      });
+    }
     await this.bot.sendAndStore({
       conversationId: conversation.id,
       accountId: conversation.whatsappAccountId ?? undefined,

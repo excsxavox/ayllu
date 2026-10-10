@@ -18,9 +18,27 @@ const types = {
   ".md": "text/markdown; charset=utf-8",
 };
 
+const whatsappPhone = String(process.env.SITIO_WHATSAPP_PHONE || "15556310030").replace(/\D/g, "");
+const siteApi = String(process.env.SITIO_API_URL || "https://api.innovamf.com").replace(/\/$/, "");
+const siteCompany = String(process.env.SITIO_COMPANY_SLUG || "alpha-demo").trim() || "alpha-demo";
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
   const path = url.pathname === "/" ? "/index.html" : url.pathname;
+  if (path === "/site-config.js") {
+    res.writeHead(200, {
+      "Content-Type": "text/javascript; charset=utf-8",
+      "Cache-Control": "no-store",
+    });
+    res.end(
+      `window.AylluSite=${JSON.stringify({
+        whatsapp: whatsappPhone,
+        api: siteApi,
+        company: siteCompany,
+      })};`,
+    );
+    return;
+  }
   const file = resolve(root, path.replace(/^\/+/, ""));
   if (file.toLowerCase() !== root.toLowerCase() && !file.toLowerCase().startsWith(rootPrefix)) {
     res.writeHead(403);

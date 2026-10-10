@@ -53,7 +53,7 @@ async function main() {
   const alphaVoice = {
     botTone: "cálido",
     botSystemPrompt:
-      "Atiendes WhatsApp de Ayllu como quien recibe en el jardín, no como un bot. Calma y cercanía. Un emoji de naturaleza (🌿 🌱) como mucho. Responde en el idioma del cliente. Saluda solo la primera vez, corto, y pregunta qué quiere hacer. No te presentes como asistente. No envíes todo de una: mapa, horario o precios solo si lo piden. Si piden ubicación usa 📍; si piden horario usa 🕐. Si preguntan qué hay, nombra las experiencias en una o dos líneas. Si preguntan cómo reservar, pregunta qué quieren hacer y para qué día. La entrada al lago solo se cotiza si preguntan. No pidas nombre ni teléfono. Si no sabes algo, pasas con una persona.",
+      "Atiendes WhatsApp de Ayllu como quien recibe en el jardín, no como un bot. Calma y cercanía. Un emoji de naturaleza (🌿 🌱) como mucho. Responde en el idioma del cliente. Cada mensaje se contesta según lo que la persona acaba de escribir, aunque el chat ya llevara rato. Solo hablas de este negocio: el lago, la entrada, glamping, acampar, pesca, botes, senderos, restaurante, reservas y pagos. Un saludo (hola, buenas) se responde con un saludo cordial y una pregunta abierta; no retomes precios ni preguntes para cuántas personas si este mensaje no habla de entrada o precio. Si preguntan si hay disponibilidad, revisa los cupos de ese día y di si está libre u ocupado. No envíes abono ni cuenta bancaria hasta que confirmen que quieren reservar. La entrada solo se cotiza si la piden en este mensaje, y ahí sí preguntas cuántos van si no lo dijeron. No envíes todo de una: mapa, horario o precios solo si lo piden. Si piden ubicación usa 📍; si piden horario usa 🕐. Si preguntan qué hay, nombra las experiencias en una o dos líneas. Si preguntan cómo reservar, pregunta qué quieren hacer y para qué día. No pidas nombre ni teléfono. Si no sabes algo o se sale del negocio, pasas con una persona.",
   };
 
   const alpha = await prisma.company.upsert({
@@ -366,7 +366,8 @@ async function main() {
       priority: 10,
       conditions: { firstMessageOnly: true, when: "greeting" },
       actions: {
-        reply: "Hola 🌿 Bienvenido a Ayllu, junto al lago. ¿Qué te gustaría hacer?",
+        reply:
+          "¡Hola! 🌿 Bienvenido a Ayllu. Un espacio junto al lago para disfrutar, descansar y crear momentos especiales. ¿Cómo podemos ayudarte hoy?",
         replyEn: "Hi 🌿 Welcome to Ayllu, by the lake. What would you like to do?",
       },
     },
@@ -432,6 +433,7 @@ async function main() {
       },
     });
     if (existing) {
+      const keepReply = rule.type === "GREETING" && existing.actions && typeof existing.actions === "object";
       await prisma.businessRule.update({
         where: { id: existing.id },
         data: {
@@ -439,7 +441,7 @@ async function main() {
           priority: rule.priority,
           enabled: true,
           conditions: rule.conditions,
-          actions: rule.actions,
+          actions: keepReply ? existing.actions : rule.actions,
         },
       });
     } else {
@@ -467,7 +469,7 @@ async function main() {
     {
       title: "Preguntas frecuentes",
       content:
-        "Ayllu es una reserva junto al lago. El asistente atiende las 24 horas. Saluda corto y pregunta qué quiere hacer la persona. No listes todas las actividades, precios, mapa ni horario de una sola vez.",
+        "Ayllu es una reserva junto al lago. El asistente atiende las 24 horas y solo habla de este negocio. Contesta según el mensaje que acaba de llegar, aunque ya hubiera conversación. Un saludo se responde con un saludo cordial y una pregunta abierta; no se retoma la entrada ni se pide el número de personas si no lo preguntaron en ese mensaje. No listes todas las actividades, precios, mapa ni horario de una sola vez.",
     },
     {
       title: "Horario",
@@ -476,7 +478,7 @@ async function main() {
     {
       title: "Entrada al lago",
       content:
-        "Antes de dar el precio de entrada se pregunta para cuántas personas van. La entrada cuesta 1 dólar los niños de 5 a 12 años y 2 dólares los mayores. Los menores de 5 años no pagan.",
+        "La entrada se cotiza solo si en este mensaje preguntan precio o entrada. Si no dijeron cuántas personas, se pregunta entonces. No se vuelve a pedir el número de personas cuando saludan o cambian de tema. La entrada cuesta 1 dólar los niños de 5 a 12 años y 2 dólares los mayores. Los menores de 5 años no pagan.",
     },
     {
       title: "Acampar",

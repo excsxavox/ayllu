@@ -218,16 +218,79 @@ export function inferCrmFromMessage(text: string, timezone = "America/Lima"): { 
   return { stage: "TALKING", nextAction: "Seguir la conversación" };
 }
 
+/** Pregunta si el día está libre. No es una confirmación de reserva. */
+export function asksForAvailability(text: string): boolean {
+  const t = fold(text);
+  if (/\b(abono|adelanto|transferenc|cuenta banc|datos para reserv|numero de cuenta|nro de cuenta)\b/.test(t)) {
+    return false;
+  }
+  return /\b(disponib\w*|cupos?|ocupad\w*|esta libre|hay lugar|tienen lugar|available|availability|lleno)\b/.test(t);
+}
+
+/** Pedido armado desde el formulario de la web (wa.me con texto). */
+export function isWebBookingLead(text: string): boolean {
+  const t = fold(text);
+  return /\b(reservar desde la web|reserva desde la web|desde la (pagina )?web|from the website|book(ing)? from the (web|site))\b/.test(
+    t,
+  );
+}
+
 export function shouldOfferDeposit(text: string, timezone = "America/Lima"): boolean {
+  if (asksForAvailability(text) || isWebBookingLead(text)) return false;
   if (asksForPhotos(text) && !looksLikeBooking(text) && !wantsStayReservation(text) && !asksForReservationDetails(text)) {
     return false;
   }
   if (asksForReservationDetails(text)) return true;
   const hasDate = Boolean(parseBookingDateHint(text, timezone));
+  const wantsToBook = /\b(reserv\w*|agend\w*|apart\w*|confirma\w*|quiero|necesito)\b/.test(fold(text));
   return (
-    (looksLikeBooking(text) || wantsStayReservation(text)) &&
+    (wantsStayReservation(text) || (looksLikeBooking(text) && wantsToBook)) &&
     (hasDate || /\b(pag\w*|transferenc|abono|adelanto|deposito|dep[oó]sito|cuenta banc|pay|deposit)\b/i.test(fold(text)))
   );
+}
+
+export function placeSearchKeys(place: { id: string; name: string }) {
+  const bits = fold(place.name)
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 2);
+  return [...new Set([fold(place.id), ...bits])];
+}
+
+/** El recurso del que habla el mensaje (glamping, botes), no la cantidad de personas. */
+export function matchBookingPlace<T extends { id: string; name: string }>(places: T[], text: string): T | null {
+  const hay = fold(text).replace(/\bgampl\w*/g, "glamping");
+  const hits = places.filter((place) => placeSearchKeys(place).some((key) => key && hay.includes(key)));
+  hits.sort((a, b) => b.name.length - a.name.length);
+  return hits[0] ?? null;
+}
+
+export function bookingUsesPlace(place: { id: string; name: string }, blob: string) {
+  const text = fold(blob);
+  if (text.includes(`[u:${fold(place.id)}:`)) return true;
+  return placeSearchKeys(place).some((key) => key.length > 2 && text.includes(key));
+}
+
+export function formatAvailabilityReply(
+  locale: ReplyLocale,
+  input: { date: string; isToday: boolean; hasRoom: boolean; placeName?: string | null; resourceNames?: string[] },
+): string {
+  const when = input.isToday ? (locale === "en" ? "today" : "hoy") : input.date;
+  const place = input.placeName?.trim();
+  if (!place) {
+    const names = (input.resourceNames ?? []).filter(Boolean);
+    const list = names.length ? (locale === "en" ? names.join(", ") : names.join(", ")) : "";
+    return locale === "en"
+      ? `Which one should I check${list ? `? We have ${list}` : ""}. I won't book anything until you confirm.`
+      : `¿Para cuál lo reviso${list ? `? Tenemos ${list}` : ""}. No reservo nada hasta que lo confirmes.`;
+  }
+  if (!input.hasRoom) {
+    return locale === "en"
+      ? `${place} is full ${input.isToday ? "today" : `on ${when}`}. I can look at another day if you want.`
+      : `Uf, ${place} está ocupado para ${when}. Si quieres, miro otro día.`;
+  }
+  return locale === "en"
+    ? `Yes, ${place} is free ${input.isToday ? "today" : `on ${when}`}. If it sounds good, we can set it aside.`
+    : `Sí, ${place} está libre para ${when}. Si te late, lo apartamos.`;
 }
 
 export function stayLabel(text: string, locale: ReplyLocale): string {
@@ -384,6 +447,9 @@ export function classifyIntent(text: string): IntentPlan {
   }
   if (PAYMENT_HINT.test(t) || PAYMENT_HINT.test(text)) {
     return plan("payment", { sources: ["FAQ"], needsPayment: true, chunkLimit: 3 });
+  }
+  if (asksForAvailability(text)) {
+    return plan("booking", { sources: ["FAQ", "MANUAL"], needsBooking: true, needsPayment: false, chunkLimit: 3 });
   }
   if (
     looksLikeBooking(text) ||

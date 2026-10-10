@@ -9,7 +9,7 @@ import {
 } from "@aylluu/shared";
 import { BookingsService } from "./bookings.service";
 import { AuthService } from "../auth/auth.service";
-import { CurrentTenant, CurrentUser } from "../auth/decorators";
+import { CurrentTenant, CurrentUser, Public } from "../auth/decorators";
 import { Roles } from "../auth/roles.guard";
 import { AuthUser, TenantContext } from "../common/types";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
@@ -112,6 +112,17 @@ export class BookingsController {
       entityId: company.id,
     });
     return company;
+  }
+
+  @Public()
+  @SetMetadata("skipTenant", true)
+  @Get("public/:slug/agenda")
+  publicAgenda(
+    @Param("slug") slug: string,
+    @Query("from") from: string,
+    @Query("to") to: string,
+  ) {
+    return this.bookings.publicAgenda(slug, from, to);
   }
 
   @Get("bookings/settings")

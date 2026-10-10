@@ -1,16 +1,58 @@
-/* AYLLU: inventario DEMOSTRATIVO. No representa la agenda real del negocio.
- * Datos deterministas por fecha; reservas de prueba guardadas solo en memoria.
- * Este módulo concentra disponibilidad, validación y asignación de unidades.
+/* AYLLU: disponibilidad del sitio. Puede usar la agenda real de la API (mismos
+ * places/unitCount del móvil) o un inventario local de respaldo.
  */
 var AylluAvailability = (() => {
   const DAY = 86400000;
-  const SERVICES = {
-    glamping: { name: 'Glamping', subtitle: 'Una estancia en la naturaleza', type: 'stay', perUnit: 2, units: 4, unit: 'glamping', plural: 'glampings', times: ['15:00'], maxGuests: 8, note: 'Ejemplo: 2 personas por glamping, entrada 15:00 y salida 11:00.' },
-    restaurante: { name: 'Restaurante AYLLU', subtitle: 'Una mesa para compartir', type: 'slot', perUnit: 1, units: 20, unit: 'plaza', plural: 'plazas', times: ['09:00','11:00','13:00','15:00'], maxGuests: 12, note: 'Ejemplo: mesas por horario. Carta y precios por confirmar con AYLLU.' },
-    pesca: { name: 'Pesca en el lago', subtitle: 'Disfruta la laguna a tu ritmo', type: 'slot', perUnit: 1, units: 12, unit: 'plaza', plural: 'plazas', times: ['09:00','11:00','14:00'], maxGuests: 12, note: 'Ejemplo: plazas por turno. Equipos y condiciones por confirmar.' },
-    botes: { name: 'Botes a remo', subtitle: 'Otra forma de descubrir el paisaje', type: 'slot', perUnit: 3, units: 4, unit: 'bote', plural: 'botes', times: ['10:00','11:00','12:00','14:00','15:00'], maxGuests: 12, note: 'Ejemplo: 3 personas por bote. Capacidad y duración reales por confirmar.' },
-    senderismo: { name: 'Senderismo', subtitle: 'Un recorrido al aire libre', type: 'slot', perUnit: 1, units: 10, unit: 'plaza', plural: 'plazas', times: ['09:00','12:00'], maxGuests: 10, note: 'Ejemplo: cupos por salida. Ruta y condiciones por confirmar.' }
+  const META = {
+    glamping: { subtitle: 'Una estancia en la naturaleza', type: 'stay', perUnit: 2, unit: 'glamping', plural: 'glampings', times: ['15:00'], maxGuests: 8, note: 'Entrada 15:00 y salida 11:00. Cupos según la agenda de AYLLU.' },
+    acampar: { subtitle: 'Campamento junto al lago', type: 'stay', perUnit: 2, unit: 'espacio', plural: 'espacios', times: ['15:00'], maxGuests: 12, note: 'Cupos según la agenda de AYLLU. Implementos por confirmar.' },
+    restaurante: { subtitle: 'Una mesa para compartir', type: 'slot', perUnit: 1, unit: 'mesa', plural: 'mesas', times: ['09:00','11:00','13:00','15:00'], maxGuests: 12, note: 'Mesas según la agenda de AYLLU. Carta y precios por confirmar.' },
+    pesca: { subtitle: 'Disfruta la laguna a tu ritmo', type: 'slot', perUnit: 1, unit: 'plaza', plural: 'plazas', times: ['09:00','11:00','14:00'], maxGuests: 12, note: 'Cupos según la agenda de AYLLU.' },
+    botes: { subtitle: 'Otra forma de descubrir el paisaje', type: 'slot', perUnit: 3, unit: 'bote', plural: 'botes', times: ['10:00','11:00','12:00','14:00','15:00'], maxGuests: 12, note: 'Botes según la agenda de AYLLU.' },
+    senderismo: { subtitle: 'Un recorrido al aire libre', type: 'slot', perUnit: 1, unit: 'plaza', plural: 'plazas', times: ['09:00','12:00'], maxGuests: 10, note: 'Cupos según la agenda de AYLLU.' }
   };
+  const SERVICES = {
+    glamping: { name: 'Glamping', units: 4, ...META.glamping },
+    restaurante: { name: 'Restaurante AYLLU', units: 8, ...META.restaurante },
+    pesca: { name: 'Pesca en el lago', units: 12, ...META.pesca },
+    botes: { name: 'Botes a remo', units: 4, ...META.botes },
+    senderismo: { name: 'Senderismo', units: 10, ...META.senderismo }
+  };
+  let liveAgenda = null;
+  const CABANA_PLACES = new Set(['glamping', 'acampar']);
+  function applyAgenda(agenda) {
+    liveAgenda = agenda || null;
+    if (agenda?.places?.length) {
+      agenda.places = agenda.places.filter((place) => CABANA_PLACES.has(place.id));
+    }
+    if (!agenda?.places?.length) return SERVICES;
+    const keep = new Set(agenda.places.map((place) => place.id));
+    Object.keys(SERVICES).forEach((id) => { if (!keep.has(id)) delete SERVICES[id]; });
+    agenda.places.forEach((place) => {
+      const meta = META[place.id] || {
+        subtitle: place.name,
+        type: place.trackGuests ? 'stay' : 'slot',
+        perUnit: place.trackGuests ? 2 : 1,
+        unit: 'unidad',
+        plural: 'unidades',
+        times: place.trackGuests ? ['15:00'] : ['10:00', '12:00', '14:00'],
+        maxGuests: Math.max(place.unitCount * (place.trackGuests ? 2 : 1), 8),
+        note: 'Cupos según la agenda de AYLLU.',
+      };
+      SERVICES[place.id] = {
+        name: place.name,
+        units: place.unitCount,
+        ...meta,
+        maxGuests: Math.max(meta.maxGuests || 8, place.unitCount * (meta.perUnit || 1)),
+      };
+    });
+    return SERVICES;
+  }
+  function liveUnits(service, day) {
+    const free = liveAgenda?.days?.[day]?.[service]?.free;
+    if (typeof free !== 'number') return null;
+    return Array.from({ length: Math.max(0, free) }, (_, i) => `${service}-${i + 1}`);
+  }
   function localDay(now = new Date()) {
     const parts = new Intl.DateTimeFormat('en-US', {timeZone: 'America/Guayaquil', year: 'numeric', month: '2-digit', day: '2-digit'}).formatToParts(now);
     const get = t => parts.find(p => p.type === t).value;
@@ -35,26 +77,33 @@ var AylluAvailability = (() => {
   }
   function hash(text) { let h=0; for(const c of text) h=(Math.imul(h,31)+c.charCodeAt(0))>>>0; return h; }
   function baseUnits(service, day, time) {
+    const live = liveUnits(service, day);
+    if (live) return live;
     const s=SERVICES[service];
-    // Un día cerrado de cada 13 y unidades ocupadas variables: solo escenarios de ejemplo.
+    if(!s) return [];
+    // Respaldo local solo si la API no respondió.
     if(hash(`${service}:${day}`)%13 === 0) return [];
     return Array.from({length:s.units}, (_,i)=>`${service}-${i+1}`).filter(id => hash(`${day}:${time}:${id}`)%7 >= 2);
   }
   function createEngine({now=()=>new Date(), inventory=baseUnits}={}) {
     const used = new Map();
     let sequence=0;
-    const bounds = () => ({min:localDay(now()), max:addDays(localDay(now()),89)});
+    const bounds = () => {
+      const min = localDay(now());
+      const horizon = Math.max(1, Math.min(180, liveAgenda?.horizonDays || 14));
+      return { min, max: addDays(min, horizon - 1) };
+    };
     function validate(q) {
       const s=SERVICES[q.service];
       if(!s) return tx('av.pick', 'Selecciona una experiencia.');
       const b=bounds();
       if(!validDate(q.date)) return tx('av.date', 'Elige una fecha válida.');
       if(q.date<b.min) return tx('av.fromToday', 'Selecciona una fecha de hoy en adelante.');
-      if(q.date>b.max) return tx('av.horizon', 'La demostración muestra los próximos 90 días.');
-      if(!Number.isInteger(q.guests)||q.guests<1||q.guests>s.maxGuests) return tx('av.guests', `Esta demo admite entre 1 y ${s.maxGuests} personas para ${s.name}.`, {max:s.maxGuests,name:s.name});
+      if(q.date>b.max) return tx('av.horizon', 'Puedes consultar los próximos días disponibles en la agenda.');
+      if(!Number.isInteger(q.guests)||q.guests<1||q.guests>s.maxGuests) return tx('av.guests', `Puedes consultar entre 1 y ${s.maxGuests} personas para ${s.name}.`, {max:s.maxGuests,name:s.name});
       if(s.type==='stay') {
-        if(!Number.isInteger(q.nights)||q.nights<1||q.nights>7) return tx('av.nights', 'Elige entre 1 y 7 noches para probar la estancia.');
-        if(addDays(q.date,q.nights-1)>b.max) return tx('av.stayOver', 'La estancia supera las fechas disponibles en esta demostración.');
+        if(!Number.isInteger(q.nights)||q.nights<1||q.nights>7) return tx('av.nights', 'Elige entre 1 y 7 noches.');
+        if(addDays(q.date,q.nights-1)>b.max) return tx('av.stayOver', 'La estancia supera las fechas disponibles en la agenda.');
       }
       return '';
     }
@@ -87,19 +136,20 @@ var AylluAvailability = (() => {
       const ids=available(q,time).slice(0,found.required);
       nightsOf(q).forEach(day=>{const k=key(q.service,day,time);if(!used.has(k))used.set(k,new Set());ids.forEach(id=>used.get(k).add(id));});
       sequence++;
-      return {ok:true,ref:`DEMO-${String(sequence).padStart(4,'0')}`,query:{...q},time,units:ids.length,departure:SERVICES[q.service].type==='stay'?addDays(q.date,q.nights):null};
+      return {ok:true,ref:`AYLLU-${String(sequence).padStart(4,'0')}`,query:{...q},time,units:ids.length,departure:SERVICES[q.service].type==='stay'?addDays(q.date,q.nights):null};
     }
     function alternatives(q,limit=3) {
       const results=[],b=bounds();let start=validDate(q.date)&&q.date>=b.min?q.date:b.min;
-      for(let offset=1;offset<=90&&results.length<limit;offset++) {
+      const span = Math.max(1, (Date.parse(`${b.max}T00:00:00Z`) - Date.parse(`${b.min}T00:00:00Z`)) / DAY);
+      for(let offset=1;offset<=span&&results.length<limit;offset++) {
         const date=addDays(start,offset);if(date>b.max) break;
         const r=query({...q,date}); if(!r.error&&r.slots.some(s=>s.available))results.push({date,...r});
       }
       return results;
     }
-    return {query,reserve,validate,bounds,alternatives};
+    return {query,reserve,validate,bounds,alternatives,live:()=>Boolean(liveAgenda)};
   }
-  return {SERVICES,createEngine,addDays,dateLabel,validDate,localDay};
+  return {SERVICES,createEngine,applyAgenda,addDays,dateLabel,validDate,localDay};
 })();
 if (typeof window !== "undefined") window.AylluAvailability = AylluAvailability;
 if(typeof module !== 'undefined' && module.exports) module.exports=AylluAvailability;

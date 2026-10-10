@@ -51,6 +51,16 @@ export function placeTracksGuests(place: BookingPlace) {
   return place.trackGuests ?? (place.id === "glamping" || place.id === "acampar");
 }
 
+/** Recursos de cabañas / estadía (móvil y sitio público). */
+export const CABANA_BOOKING_PLACE_IDS = ["glamping", "acampar"] as const;
+
+export function filterCabanaPlaces(places: BookingPlace[]): BookingPlace[] {
+  const allowed = new Set<string>(CABANA_BOOKING_PLACE_IDS);
+  const filtered = places.filter((place) => allowed.has(place.id));
+  if (filtered.length) return filtered;
+  return DEFAULT_BOOKING_PLACES.filter((place) => allowed.has(place.id));
+}
+
 export function normalizeBookingPlaces(raw: unknown): BookingPlace[] {
   const parsed = z.array(bookingPlaceSchema).safeParse(raw);
   if (parsed.success && parsed.data.length) {

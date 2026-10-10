@@ -24,6 +24,11 @@ import {
   asksForPhotos,
   classifyIntent,
   crmStageRank,
+  asksForAvailability,
+  bookingUsesPlace,
+  formatAvailabilityReply,
+  isWebBookingLead,
+  matchBookingPlace,
   formatDepositHoldReply,
   inferCrmFromMessage,
   shouldOfferDeposit,
@@ -452,9 +457,12 @@ export class BotService {
     });
     const alreadyReplied = recent.some((m) => m.direction === "OUTBOUND");
     const lastOutbound = recent.find((m) => m.direction === "OUTBOUND")?.content ?? "";
-    const awaitingGuests = askedForGuestCount(lastOutbound);
+    const greetingOnly = isGreetingOnly(params.text);
+    const awaitingGuests = askedForGuestCount(lastOutbound) && !greetingOnly;
     const guests = this.rules.parseGuestCount(params.text, { allowBare: awaitingGuests });
-    const priceAsk = isPriceQuestion(params.text) || awaitingGuests;
+    const priceAsk =
+      (isPriceQuestion(params.text) && !asksForAvailability(params.text)) ||
+      (awaitingGuests && guests == null && !messageNeedsAppContext(params.text));
 
     const hits = await this.rules.evaluate({
       companyId,
@@ -565,21 +573,29 @@ export class BotService {
     }
 
     const wantPhotos = asksForPhotos(params.text);
-    const photos = wantPhotos ? await this.collectCatalogPhotos(companyId, params.text) : [];
-    const photosOnly =
+    const serviceLook =
+      !isGreetingOnly(params.text) &&
+      !isPriceQuestion(params.text) &&
+      !looksLikeBooking(params.text) &&
+      !wantsStayReservation(params.text) &&
+      !asksForLocation(params.text) &&
+      !asksForHours(params.text) &&
+      !asksForAvailability(params.text);
+    const photoHint = [params.text, ...recent.filter((m) => m.direction === "INBOUND").map((m) => m.content)].join("\n");
+    const visual =
+      wantPhotos || serviceLook
+        ? await this.chooseCatalogPhoto(companyId, conversation.id, photoHint, params.text)
+        : null;
+    const photos = visual ? [visual] : [];
+    const photoQuestionOnly =
       wantPhotos &&
-      photos.length > 0 &&
       !isPriceQuestion(params.text) &&
       !looksLikeBooking(params.text) &&
       !wantsStayReservation(params.text) &&
       !asksForLocation(params.text) &&
       !asksForHours(params.text);
 
-    if (wantPhotos && photos.length) {
-      replies.push(
-        locale === "en" ? "Here are some photos 🌿" : "Te mando unas fotos de las instalaciones 🌿",
-      );
-    } else if (wantPhotos && !photos.length) {
+    if (wantPhotos && !visual) {
       replies.push(
         locale === "en"
           ? "I don't have photos loaded yet. I'll have someone from the team send them."
@@ -587,26 +603,45 @@ export class BotService {
       );
     }
 
-    const offerDeposit = shouldOfferDeposit(params.text, params.company.timezone);
-    if (offerDeposit && !photosOnly) {
-      const booking = await this.bookings.botContext(companyId);
-      const methods = await this.payments.listActive(companyId);
-      const deposit = formatDepositHoldReply(
-        locale,
-        params.text,
-        booking?.depositPercent ?? 50,
-        methods,
-      );
-      if (deposit) replies.push(deposit);
+    const availabilityAsk = asksForAvailability(params.text);
+    const availabilityFact =
+      availabilityAsk && !photoQuestionOnly
+        ? await this.availabilityReply(companyId, conversation.id, params.text, params.company.timezone, locale)
+        : null;
+
+    const offerDeposit = !availabilityAsk && shouldOfferDeposit(params.text, params.company.timezone);
+    if (offerDeposit && !photoQuestionOnly) {
+      const hinted = parseBookingDateHint(params.text, params.company.timezone);
+      const resource = hinted ? await this.resourceRoom(companyId, hinted, params.text) : null;
+      if (resource?.placeName && !resource.hasRoom) {
+        replies.push(
+          formatAvailabilityReply(locale, {
+            date: hinted!,
+            isToday: hinted === dateInZone(new Date(), params.company.timezone),
+            hasRoom: false,
+            placeName: resource.placeName,
+          }),
+        );
+      } else {
+        const booking = await this.bookings.botContext(companyId);
+        const methods = await this.payments.listActive(companyId);
+        const deposit = formatDepositHoldReply(
+          locale,
+          params.text,
+          booking?.depositPercent ?? 50,
+          methods,
+        );
+        if (deposit) replies.push(deposit);
+      }
     }
 
     const hasFixedReply = Boolean(keywordOrHoursReply || cannedHits[0]);
     if (
-      !photosOnly &&
+      !(photoQuestionOnly && !visual) &&
       !offerDeposit &&
       !transfer &&
       !waitingForGuests &&
-      (askApp || !hasFixedReply || (awaitingGuests && guests != null))
+      (availabilityFact || askApp || !hasFixedReply || (awaitingGuests && guests != null))
     ) {
       try {
         const generated = await this.generateReply({
@@ -618,8 +653,13 @@ export class BotService {
           userText: params.text,
           alreadyReplied,
           guestCount: guests,
+          photoContext: visual
+            ? { detail: visual.detail, onlyOne: visual.onlyOne }
+            : undefined,
+          availabilityFact,
         });
         if (generated) replies.push(generated);
+        else if (availabilityFact) replies.push(availabilityFact);
         else {
           const fallback = hits.find((h) => h.type === "FALLBACK" && h.actions.reply);
           replies.push(localizedReply(fallback?.actions, locale) ?? keepConversationGoing(locale, params.text));
@@ -633,7 +673,7 @@ export class BotService {
         }
       } catch (err) {
         this.logger.error(`generateReply falló: ${(err as Error).message}`);
-        replies.push(keepConversationGoing(locale, params.text));
+        replies.push(availabilityFact ?? keepConversationGoing(locale, params.text));
       }
     }
 
@@ -662,7 +702,7 @@ export class BotService {
     }
 
     const uniqueReplies = [...new Set(replies.filter(Boolean))];
-    if (!uniqueReplies.length && !transfer) {
+    if (!uniqueReplies.length && !transfer && !photos.length) {
       uniqueReplies.push(keepConversationGoing(locale, params.text));
     }
     if (replyMode === "HYBRID") {
@@ -682,15 +722,17 @@ export class BotService {
         text,
       });
     }
-    for (const [index, photo] of photos.slice(0, 6).entries()) {
-      await this.sendAndStoreImage({
+    for (const photo of photos.slice(0, 1)) {
+      const delivered = await this.sendAndStoreImage({
         conversationId: conversation.id,
         accountId: params.account?.id,
         to: params.from,
         url: photo.url,
         filePath: photo.filePath,
-        caption: index === 0 ? photo.caption : undefined,
       });
+      if (!delivered) {
+        this.logger.error("La foto no se pudo enviar");
+      }
     }
 
     return {
@@ -774,6 +816,7 @@ export class BotService {
         this.logger.error(`Envío de foto falló: ${(err as Error).message}`);
       }
     }
+    const delivered = Boolean(providerMessageId);
     await this.prisma.message.create({
       data: {
         conversationId: params.conversationId,
@@ -787,9 +830,10 @@ export class BotService {
       where: { id: params.conversationId },
       data: { lastMessageAt: new Date() },
     });
+    return delivered;
   }
 
-  private async collectCatalogPhotos(companyId: string, userText: string) {
+  private async chooseCatalogPhoto(companyId: string, conversationId: string, hint: string, currentText: string) {
     const skip = new Set([
       "foto",
       "fotos",
@@ -801,67 +845,101 @@ export class BotService {
       "pictures",
       "instalaciones",
       "instalacion",
-      "pueden",
-      "ayudar",
-      "con",
-      "las",
+      "lugar",
+      "tiene",
+      "tienen",
+      "manda",
+      "mandame",
+      "envia",
+      "enviame",
+      "para",
+      "del",
+      "una",
+      "unas",
       "los",
+      "las",
+      "con",
     ]);
-    const tokens = searchTokens(userText).filter((w) => !skip.has(w));
-    const [services, products, promotions] = await Promise.all([
+    const usable = (text: string, max: number) => searchTokens(text, max).filter((word) => !skip.has(word));
+    const wantPhotos = asksForPhotos(currentText);
+    const tokens = wantPhotos ? usable(hint, 24) : usable(currentText, 12);
+    if (!tokens.length && !wantPhotos) return null;
+
+    const [services, products, sent] = await Promise.all([
       this.prisma.service.findMany({
         where: { companyId, isActive: true },
-        select: { name: true, description: true, imageUrls: true },
-        take: 40,
+        select: { id: true, name: true, description: true, imageUrls: true },
       }),
       this.prisma.product.findMany({
         where: { companyId, isActive: true },
-        select: { name: true, description: true, imageUrls: true, isAddon: true },
-        take: 40,
+        select: {
+          name: true,
+          description: true,
+          imageUrls: true,
+          parentService: { select: { id: true, name: true, description: true } },
+        },
       }),
-      this.prisma.promotion.findMany({
-        where: { companyId, isActive: true },
-        select: { name: true, description: true, imageUrls: true },
-        take: 12,
+      this.prisma.message.findMany({
+        where: { conversationId, direction: "OUTBOUND", type: "image" },
+        select: { content: true },
+        orderBy: { createdAt: "asc" },
+        take: 30,
       }),
     ]);
-    const promoAsked = /\b(promoci[oó]n|promo|oferta|descuento)\b/i.test(userText);
-    const serviceRows = services.filter((s) => s.imageUrls?.length).map((s) => ({ ...s, kind: "service" as const }));
-    const promoRows = promotions.filter((p) => p.imageUrls?.length).map((p) => ({ ...p, kind: "promo" as const }));
-    const productRows = products
-      .filter((p) => p.imageUrls?.length)
-      .map((p) => ({ ...p, kind: "product" as const }));
-    const match = <T extends { name: string; description?: string | null }>(rows: T[]) =>
-      tokens.length
-        ? rows.filter((row) => {
-            const hay = `${row.name} ${row.description ?? ""}`.toLowerCase();
-            return tokens.some((t) => hay.includes(t));
-          })
-        : [];
-    const matchedServices = match(serviceRows);
-    const matchedProducts = match(productRows);
-    const matchedPromos = match(promoRows);
-    const fallbackProducts = productRows.filter((p) => !p.isAddon);
-    const pool =
-      promoAsked && matchedPromos.length
-        ? matchedPromos
-        : matchedServices.length || matchedProducts.length || matchedPromos.length
-          ? [...matchedPromos, ...matchedServices, ...matchedProducts]
-          : serviceRows.length
-            ? serviceRows
-            : fallbackProducts.length
-              ? fallbackProducts
-              : productRows;
-    const out: Array<{ url: string; filePath?: string; caption?: string }> = [];
-    for (const item of pool) {
-      for (const raw of item.imageUrls) {
-        const resolved = this.resolvePhoto(raw);
-        if (!resolved) continue;
-        out.push({ ...resolved, caption: item.name });
-        if (out.length >= 6) return out;
+
+    const foldText = (text: string) => text.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+    const hit = (text: string) => {
+      const hay = foldText(text);
+      return tokens.some((token) => hay.includes(token));
+    };
+    type Choice = { detail: string; urls: string[]; needle: string };
+    const choices: Choice[] = [];
+    for (const service of services) {
+      if (!tokens.length || !hit(`${service.name} ${service.description ?? ""}`)) continue;
+      const children = products.filter((product) => product.parentService?.id === service.id && product.imageUrls.length);
+      const urls = [...service.imageUrls, ...children.flatMap((product) => product.imageUrls)];
+      const extra = children
+        .map((product) => [product.name, product.description].filter(Boolean).join(": "))
+        .join("\n");
+      const detail = [service.name, service.description, extra].filter(Boolean).join("\n");
+      if (urls.length) choices.push({ detail, urls, needle: foldText(service.name) });
+    }
+    if (!choices.length && tokens.length) {
+      for (const product of products) {
+        const parent = product.parentService;
+        const blob = `${product.name} ${product.description ?? ""} ${parent?.name ?? ""}`;
+        if ((tokens.length && !hit(blob)) || !product.imageUrls.length) continue;
+        const detail = [parent?.name, parent?.description, product.name, product.description].filter(Boolean).join("\n");
+        choices.push({ detail, urls: product.imageUrls, needle: foldText(parent?.name || product.name) });
       }
     }
-    return out;
+    if (!tokens.length && !choices.length && wantPhotos) {
+      const any = [...services.flatMap((service) => service.imageUrls), ...products.flatMap((product) => product.imageUrls)];
+      const named = services.find((service) => service.imageUrls.length) ?? null;
+      const product = products.find((item) => item.imageUrls.length) ?? null;
+      const urls = named?.imageUrls.length ? named.imageUrls : product?.imageUrls ?? any;
+      const detail = [named?.name ?? product?.name, named?.description ?? product?.description].filter(Boolean).join("\n");
+      if (urls.length && detail) choices.push({ detail, urls, needle: "" });
+    }
+    const foldedHint = foldText(hint);
+    const choice = choices.reduce<Choice | undefined>((best, item) => {
+      if (!best) return item;
+      return foldedHint.lastIndexOf(item.needle) >= foldedHint.lastIndexOf(best.needle) ? item : best;
+    }, undefined);
+    if (!choice) return null;
+    const resolved = choice.urls
+      .map((url) => this.resolvePhoto(url))
+      .filter((photo): photo is { url: string; filePath?: string } => Boolean(photo));
+    if (!resolved.length) return null;
+
+    const sentBlob = sent.map((message) => message.content).join("\n");
+    const fresh = resolved.find((photo) => !sentBlob.includes(photo.url));
+    const already = resolved.some((photo) => sentBlob.includes(photo.url));
+    const askingMore = /\b(otra|mas fotos|más fotos|otra foto|mas foto|más foto|siguientes)\b/i.test(currentText);
+    const again = askingMore || (wantPhotos && already);
+    const picked = again ? (fresh ?? resolved[0]) : resolved[0];
+    const onlyOne = again && !fresh;
+    return { url: picked.url, filePath: picked.filePath, detail: choice.detail, onlyOne };
   }
 
   private resolvePhoto(url: string): { url: string; filePath?: string } | null {
@@ -885,6 +963,8 @@ export class BotService {
     userText: string;
     alreadyReplied?: boolean;
     guestCount?: number | null;
+    photoContext?: { detail: string; onlyOne: boolean };
+    availabilityFact?: string | null;
   }): Promise<string | null> {
     const plan = classifyIntent(params.userText);
     if (params.guestCount != null) {
@@ -943,7 +1023,7 @@ export class BotService {
               ? `Si el cliente quiere reservar, pide qué reserva y para qué día. La reserva se asegura con un abono del ${booking.depositPercent}%. No confirmes que ya está reservado ni que ya pagó.`
               : "Puedes informar horarios y qué se reserva, pero no confirmes citas: un asesor las registra en el panel.",
             `Horario: ${booking.hours.join("; ")}`,
-            `Tope por día: ${booking.maxPerDay} reservas.`,
+            `Tope interno del día: no lo menciones al cliente. Solo di si hay lugar o si el día está ocupado.`,
             booking.items.services.length ? `Servicios reservables: ${booking.items.services.join(", ")}` : "",
             booking.items.products.length ? `Productos reservables: ${booking.items.products.join(", ")}` : "",
             booking.items.addons.length
@@ -1006,9 +1086,10 @@ export class BotService {
     ].filter(Boolean);
 
     const system = [
-      `Eres quien atiende WhatsApp de ${company?.name ?? params.companyName}. Hablas como una persona del lugar, no como un bot ni un formulario.`,
+      `Eres quien atiende WhatsApp de ${company?.name ?? params.companyName}, enfocado en cabañas y estadía (glamping, acampar). Hablas como una persona del lugar, no como un bot ni un formulario.`,
       `Zona horaria del negocio: ${company?.timezone ?? "America/Lima"}.`,
-      params.tone ? `Tono: ${params.tone}.` : "Tono: cercano y profesional.",
+      params.tone ? `Tono: ${params.tone}.` : "Tono: cálido y cercano.",
+      "Escribe como una persona del lugar, por WhatsApp: corto, cálido y natural. Nada de frases de formulario ni la misma fórmula en cada mensaje.",
       params.systemPrompt ?? "",
       `Intención detectada: ${plan.intent}. Usa SOLO el contexto de abajo. No inventes precios, stock, horarios ni promociones.`,
       alreadyReplied
@@ -1017,6 +1098,7 @@ export class BotService {
           ? "Saluda una sola vez, corto y humano. No te presentes como asistente. No listes actividades, precios, mapa ni horario. Pregunta qué quieren hacer."
           : "Si aún no saludaste, un saludo corto basta. No te presentes como asistente.",
       "Un tema por mensaje. No envíes folleto: mapa, horario o precios solo si el cliente lo pidió en este mensaje.",
+      "Las personas son cuántos van. Los recursos (glamping, botes, mesas) son las unidades creadas en la agenda. Si preguntan disponibilidad, di solo si ese recurso está libre u ocupado. Nunca digas cuántas unidades hay ni cuántas personas caben.",
       params.guestCount != null
         ? `Van ${params.guestCount} personas. Ya puedes decir el precio de la entrada. No preguntes otra vez cuántos son. Si no dijeron edades, da las tarifas y pregunta si van niños.`
         : "Si preguntan precio o entrada y no dijeron cuántas personas, NO des precios: pregunta para cuántos van. Grupos de 12 o más los atiende una persona del equipo.",
@@ -1026,7 +1108,32 @@ export class BotService {
       "Si preguntan si ya quedaron reservados, dilo con claridad: aún no está confirmado hasta que un asesor valide. Ofrece el siguiente paso.",
       "Si preguntan cómo reservar o piden glamping: pregunta el día y cuántas personas van. Di que la reserva se asegura con un abono. No inventes cuentas: los datos de transferencia se envían aparte.",
       "Si preguntan qué hay, nombra las experiencias en una o dos líneas. Sin mapa, horario ni precios.",
-      "Si preguntan fotos, no pegues URLs: las fotos se envían aparte como imagen de WhatsApp.",
+      "Si preguntan fotos y no hay imágenes cargadas, di solo que aún no están cargadas. No digas que tienes fotos ni que las vas a enviar.",
+      params.availabilityFact
+        ? [
+            "El cliente pregunta si hay lugar. Este dato es solo para ti; dilo con calidez, en una o dos frases, y nombra ese recurso.",
+            "Aunque pregunten cuántos hay, no des el número. Di solo si está libre u ocupado.",
+            "No ofrezcas el abono ni la cuenta. No hables de otro recurso.",
+            `Dato de agenda: ${params.availabilityFact}`,
+          ].join("\n")
+        : "",
+      isWebBookingLead(params.userText)
+        ? [
+            "El cliente armó este pedido en la página web y lo mandó por WhatsApp.",
+            "Confirma con calidez que recibiste el pedido: experiencia, fecha, personas y horario si vienen en el mensaje.",
+            "No pidas otra vez qué quiere hacer. Pregunta si lo apartamos o si quiere cambiar algo. No envíes el abono ni la cuenta todavía.",
+          ].join("\n")
+        : "",
+      params.photoContext
+        ? [
+            "En este turno se envía una foto aparte, sin texto en la imagen. Tú escribes la respuesta.",
+            "La ficha de abajo es solo para ti: úsala y contesta con tus palabras. No la copies ni la pegues.",
+            params.photoContext.onlyOne ? "No hay otra foto. Di que es la única de momento." : "",
+            `Ficha interna:\n${params.photoContext.detail}`,
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : "",
       "Si no está en el contexto, dilo con claridad y ofrece pasar con alguien del equipo.",
       locale === "en"
         ? "Reply in English, briefly (max 350 characters). Translate catalog facts into English. Do not answer in Spanish. Sound like a person, not a chatbot."
@@ -1046,7 +1153,7 @@ export class BotService {
     if (plan.intent === "greeting") {
       return locale === "en"
         ? "Hi 🌿 Welcome to Ayllu, by the lake. What would you like to do?"
-        : "Hola 🌿 Bienvenido a Ayllu, junto al lago. ¿Qué te gustaría hacer?";
+        : "¡Hola! 🌿 Bienvenido a Ayllu. Un espacio junto al lago para disfrutar, descansar y crear momentos especiales. ¿Cómo podemos ayudarte hoy?";
     }
 
     return this.keywordFallback(params.userText, catalogLines, retrieved);
@@ -1142,6 +1249,55 @@ export class BotService {
     ].join("\n");
   }
 
+  private async availabilityReply(
+    companyId: string,
+    conversationId: string,
+    userText: string,
+    timezone: string,
+    locale: "es" | "en",
+  ): Promise<string> {
+    const history = await this.prisma.message.findMany({
+      where: { conversationId },
+      orderBy: { createdAt: "desc" },
+      take: 8,
+      select: { direction: true, content: true },
+    });
+    const fromCustomer = [userText, ...history.filter((m) => m.direction === "INBOUND").map((m) => m.content)].join("\n");
+    const date =
+      parseBookingDateHint(userText, timezone) ??
+      parseBookingDateHint(fromCustomer, timezone) ??
+      dateInZone(new Date(), timezone);
+    const room = await this.resourceRoom(companyId, date, fromCustomer, userText);
+    if (!room) {
+      return locale === "en"
+        ? "I can't see the resources from here. Someone from the team will confirm. Nothing is booked yet."
+        : "Desde aquí no veo los recursos de la agenda. Alguien del equipo te confirma. Todavía no hay reserva.";
+    }
+    return formatAvailabilityReply(locale, {
+      date,
+      isToday: date === dateInZone(new Date(), timezone),
+      hasRoom: room.hasRoom,
+      placeName: room.placeName,
+      resourceNames: room.names,
+    });
+  }
+
+  private async resourceRoom(companyId: string, date: string, hint: string, currentText?: string) {
+    const day = await this.bookings.dayResources(companyId, date);
+    if (!day) return null;
+    const place =
+      (currentText ? matchBookingPlace(day.places, currentText) : null) ?? matchBookingPlace(day.places, hint);
+    if (!place) {
+      return { placeName: null as string | null, hasRoom: false, names: day.places.map((item) => item.name) };
+    }
+    const occupied = day.occupied.filter((blob) => bookingUsesPlace(place, blob)).length;
+    return {
+      placeName: place.name,
+      hasRoom: occupied < place.unitCount,
+      names: day.places.map((item) => item.name),
+    };
+  }
+
   private async bookingSlotLines(companyId: string, userText: string, timezone: string): Promise<string> {
     if (!looksLikeBooking(userText)) return "";
     const hinted = parseBookingDateHint(userText, timezone);
@@ -1161,8 +1317,8 @@ export class BotService {
         );
         blocks.push(
           times.length
-            ? `${date}: ${times.join(", ")}${pack.slots.length > times.length ? "…" : ""} (${pack.remaining} cupos del día)`
-            : `${date}: sin cupos (${pack.booked}/${pack.maxPerDay} reservas)`,
+            ? `${date}: hay lugar`
+            : `${date}: ocupado`,
         );
       } catch (err) {
         this.logger.warn(`No se pudieron leer cupos de ${date}: ${(err as Error).message}`);

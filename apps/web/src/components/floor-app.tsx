@@ -1,7 +1,8 @@
 "use client";
 
 import { PointerEvent, useEffect, useMemo, useRef, useState } from "react";
-import { DEFAULT_BOOKING_PLACES, placeTracksGuests, type BookingPlace } from "@aylluu/shared";
+import { DEFAULT_BOOKING_PLACES, filterCabanaPlaces, placeTracksGuests, type BookingPlace } from "@aylluu/shared";
+import { FloorWhatsApp, countFloorHandoffs } from "@/components/floor-whatsapp";
 import { api, type Company } from "@/lib/api";
 import { dropOccupy, enqueueFloorOp, flushFloorQueue, isNetworkError, isOnline, pendingFloorOps } from "@/lib/floor-offline";
 import { writeCache } from "@/lib/query-cache";
@@ -13,7 +14,7 @@ import "./floor.css";
 
 type Status = "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED" | "NO_SHOW";
 type Pay = "PENDING" | "DEPOSIT" | "PAID";
-type View = "inicio" | "mapa" | "agenda" | "rapida" | "lugares" | "mas";
+type View = "inicio" | "mapa" | "agenda" | "rapida" | "lugares" | "mas" | "whatsapp";
 
 type Booking = {
   id: string;
@@ -272,6 +273,7 @@ export function FloorApp({
   const timezone = company?.timezone || "America/Guayaquil";
   const today = todayInZone(timezone);
   const [view, setView] = useState<View>("inicio");
+  const [waJump, setWaJump] = useState<string | null>(null);
   const [guests, setGuests] = useState(2);
   const [date, setDate] = useState(today);
   const [zone, setZone] = useState<string | null>(null);
@@ -297,9 +299,15 @@ export function FloorApp({
   const { data: settings, setData: setSettings, reload: reloadSettings } = useApiGet<Settings>("/bookings/settings");
   const { data: services } = useApiGet<CatalogItem[]>("/services");
   const { data: products } = useApiGet<CatalogItem[]>("/products");
+  const { data: waAlerts } = useApiGet<Array<{ id: string; type: string; conversationId?: string | null; readAt?: string | null }>>(
+    "/alerts?unread=1",
+  );
+  const { data: waConversations } = useApiGet<Array<{ id: string; humanTakeover: boolean; status: string }>>("/conversations");
 
   const bookings = data?.bookings ?? [];
-  const places = data?.places?.length ? data.places : settings?.places?.length ? settings.places : DEFAULT_BOOKING_PLACES;
+  const rawPlaces = data?.places?.length ? data.places : settings?.places?.length ? settings.places : DEFAULT_BOOKING_PLACES;
+  const places = filterCabanaPlaces(rawPlaces);
+  const waPending = countFloorHandoffs(waAlerts, waConversations);
   const byZone = useMemo(() => {
     const map = new Map<string, Booking[]>();
     for (const place of places) map.set(place.id, []);
@@ -1008,6 +1016,13 @@ export function FloorApp({
           </div>
         ) : null}
 
+        {view === "whatsapp" ? (
+          <FloorWhatsApp
+            initialChatId={waJump}
+            onConsumedInitial={() => setWaJump(null)}
+          />
+        ) : null}
+
         {view === "mas" ? (
           <div className="panel">
             <h1 className="mas-title">Más</h1>
@@ -1097,6 +1112,14 @@ export function FloorApp({
         </button>
         <button type="button" className={`nav-link${view === "agenda" ? " active" : ""}`} onClick={() => setView("agenda")}>
           <Icon name="calendar" /><span>Reservas</span>
+        </button>
+        <button
+          type="button"
+          className={`nav-link${view === "whatsapp" ? " active" : ""}`}
+          onClick={() => setView("whatsapp")}
+        >
+          <Icon name="chat" />
+          <span>WhatsApp{waPending ? ` (${waPending})` : ""}</span>
         </button>
         <button type="button" className={`nav-link${view === "mas" || view === "lugares" ? " active" : ""}`} onClick={() => setView("mas")}>
           <Icon name="more" /><span>Más</span>

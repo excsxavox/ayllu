@@ -208,7 +208,7 @@ export class RulesService {
       }
 
       if (rule.type === "GREETING") {
-        if (params.alreadyReplied) continue;
+        if (params.alreadyReplied && !params.isGreetingOnly) continue;
         if (conditions.firstMessageOnly === false || params.isFirstMessage || params.isGreetingOnly) {
           hits.push({ ruleId: rule.id, type: rule.type, actions, conditions });
         }
