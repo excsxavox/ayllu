@@ -14,7 +14,7 @@ import "./floor.css";
 
 type Status = "PENDING" | "CONFIRMED" | "CANCELLED" | "COMPLETED" | "NO_SHOW";
 type Pay = "PENDING" | "DEPOSIT" | "PAID";
-type View = "inicio" | "mapa" | "agenda" | "rapida" | "lugares" | "mas" | "whatsapp";
+type View = "inicio" | "mapa" | "agenda" | "rapida" | "lugares" | "cerrados" | "mas" | "whatsapp";
 
 type Booking = {
   id: string;
@@ -50,6 +50,7 @@ type Settings = {
   bookableServiceIds: string[];
   bookableProductIds: string[];
   places?: BookingPlace[];
+  closedDates?: string[];
 };
 
 type CatalogItem = { id: string; name: string; durationMinutes?: number | null; isActive: boolean; isAddon?: boolean };
@@ -279,6 +280,8 @@ export function FloorApp({
   const [zone, setZone] = useState<string | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [draftPlaces, setDraftPlaces] = useState<BookingPlace[]>(DEFAULT_BOOKING_PLACES);
+  const [draftClosed, setDraftClosed] = useState<string[]>([]);
+  const [closedMonth, setClosedMonth] = useState(today.slice(0, 7));
   const [openId, setOpenId] = useState<string | null>(null);
   const [peek, setPeek] = useState<{ booking: Booking; place: BookingPlace; unit: UnitSpot } | null>(null);
   const [placesReturn, setPlacesReturn] = useState<View>("rapida");
@@ -466,6 +469,59 @@ export function FloorApp({
     return new Date(`${date}T10:00:00-05:00`).toISOString();
   }
 
+  function openClosedDays() {
+    setDraftClosed([...(settings?.closedDates ?? [])].sort());
+    setClosedMonth(today.slice(0, 7));
+    setView("cerrados");
+  }
+
+  function toggleClosedDay(ymd: string) {
+    if (ymd < today) return;
+    setDraftClosed((prev) =>
+      prev.includes(ymd) ? prev.filter((d) => d !== ymd).sort() : [...prev, ymd].sort(),
+    );
+  }
+
+  async function saveClosedDays() {
+    setBusy(true);
+    setError("");
+    const nextDates = [...draftClosed].sort();
+    if (settings) {
+      const next = { ...settings, closedDates: nextDates };
+      setSettings(next);
+      writeCache("/bookings/settings", next);
+    }
+    try {
+      if (!isOnline()) throw new Error("offline");
+      await api("/bookings/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ closedDates: nextDates }),
+      });
+      await reloadSettings();
+      flash(nextDates.length ? `${nextDates.length} día${nextDates.length === 1 ? "" : "s"} cerrado${nextDates.length === 1 ? "" : "s"}` : "Sin días cerrados");
+      setView("mas");
+    } catch (err) {
+      if (!isOnline() || isNetworkError(err)) {
+        enqueueFloorOp({ id: newOfflineId(), type: "settings", closedDates: nextDates });
+        setQueued(pendingFloorOps());
+        flash("Guardado · se enviará al tener internet");
+        setView("mas");
+      } else {
+        setError((err as Error).message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function closedMonthDays(month: string) {
+    const [y, m] = month.split("-").map(Number);
+    const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const first = new Date(Date.UTC(y, m - 1, 1));
+    const offset = (first.getUTCDay() + 6) % 7; // lunes=0
+    return { days, offset, title: monthLabel(`${month}-01`) };
+  }
+
   function onSpot(unit: UnitSpot, current: Booking | null, place = fallbackPlace, immediate = false) {
     if (current) {
       void patch(current.id, { status: "COMPLETED" }, `${place.name} ${unit.n} libre`);
@@ -634,12 +690,19 @@ export function FloorApp({
   return (
     <div className={`ayllu-m${view === "mapa" ? " is-map" : ""}${view === "rapida" || view === "lugares" ? " is-rapida" : ""}${view === "inicio" ? " is-home" : ""}`} translate="no">
       <header className="app-header">
-        {view === "rapida" || view === "lugares" ? (
+        {view === "rapida" || view === "lugares" || view === "cerrados" ? (
           <>
-            <button type="button" className="header-gear" onClick={() => setView(view === "lugares" ? placesReturn : "inicio")} aria-label="Volver">
+            <button
+              type="button"
+              className="header-gear"
+              onClick={() => setView(view === "lugares" ? placesReturn : view === "cerrados" ? "mas" : "inicio")}
+              aria-label="Volver"
+            >
               <Icon name="chevron-left" />
             </button>
-            <p className="header-title">{view === "lugares" ? "Productos" : "Reserva rápida"}</p>
+            <p className="header-title">
+              {view === "lugares" ? "Productos" : view === "cerrados" ? "Días cerrados" : "Reserva rápida"}
+            </p>
             <span />
           </>
         ) : view === "mapa" ? (
@@ -1038,6 +1101,10 @@ export function FloorApp({
                 <Icon name="gear" />
                 <span>Lugares y sitios<small>Cuántos glampings, botes o mesas hay</small></span>
               </button>
+              <button type="button" onClick={openClosedDays}>
+                <Icon name="calendar" />
+                <span>Días cerrados<small>Bloquean visitas y reservas en todos lados</small></span>
+              </button>
               <button type="button" onClick={() => setView("mapa")}>
                 <Icon name="map" />
                 <span>Mapa del lago<small>Puntos y ocupación</small></span>
@@ -1056,6 +1123,76 @@ export function FloorApp({
             {error ? <p className="form-error">{error}</p> : null}
             <button type="button" className="btn full" disabled={busy} onClick={() => void savePlaces()}>
               {busy ? "Guardando…" : "Guardar lugares"}
+            </button>
+          </div>
+        ) : null}
+
+        {view === "cerrados" ? (
+          <div className="panel closed-panel">
+            <h1 className="mas-title">Días cerrados</h1>
+            <p className="heading-subtitle">
+              Toca un día para cerrarlo. Esos días no se reservan en la web, WhatsApp ni en el móvil.
+            </p>
+            {(() => {
+              const pack = closedMonthDays(closedMonth);
+              const [y, m] = closedMonth.split("-").map(Number);
+              const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+              const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+              return (
+                <div className="closed-cal">
+                  <div className="closed-cal-head">
+                    <button type="button" aria-label="Mes anterior" onClick={() => setClosedMonth(prev)}>‹</button>
+                    <strong>{pack.title}</strong>
+                    <button type="button" aria-label="Mes siguiente" onClick={() => setClosedMonth(next)}>›</button>
+                  </div>
+                  <div className="closed-weekdays">
+                    {["lun", "mar", "mié", "jue", "vie", "sáb", "dom"].map((d) => (
+                      <span key={d}>{d}</span>
+                    ))}
+                  </div>
+                  <div className="closed-days">
+                    {Array.from({ length: pack.offset }, (_, i) => (
+                      <span key={`e${i}`} className="closed-empty" />
+                    ))}
+                    {Array.from({ length: pack.days }, (_, i) => {
+                      const ymd = `${closedMonth}-${String(i + 1).padStart(2, "0")}`;
+                      const closed = draftClosed.includes(ymd);
+                      const past = ymd < today;
+                      return (
+                        <button
+                          key={ymd}
+                          type="button"
+                          className={`closed-day${closed ? " is-closed" : ""}${ymd === today ? " is-today" : ""}`}
+                          disabled={past}
+                          aria-pressed={closed}
+                          onClick={() => toggleClosedDay(ymd)}
+                        >
+                          {i + 1}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="closed-legend">
+                    <span className="swatch closed" /> Cerrado · no se reserva
+                  </p>
+                  {draftClosed.length ? (
+                    <ul className="closed-list">
+                      {draftClosed.filter((d) => d >= today).map((d) => (
+                        <li key={d}>
+                          <span>{longDate(d)}</span>
+                          <button type="button" onClick={() => toggleClosedDay(d)}>Abrir</button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="heading-subtitle">Ningún día cerrado por ahora.</p>
+                  )}
+                </div>
+              );
+            })()}
+            {error ? <p className="form-error">{error}</p> : null}
+            <button type="button" className="btn full" disabled={busy} onClick={() => void saveClosedDays()}>
+              {busy ? "Guardando…" : "Guardar días cerrados"}
             </button>
           </div>
         ) : null}

@@ -18,7 +18,12 @@ const types = {
   ".md": "text/markdown; charset=utf-8",
 };
 
-const whatsappPhone = String(process.env.SITIO_WHATSAPP_PHONE || "15556310030").replace(/\D/g, "");
+const whatsappGlamping = String(
+  process.env.SITIO_WHATSAPP_GLAMPING || process.env.SITIO_WHATSAPP_PHONE || "15556310030",
+).replace(/\D/g, "");
+const whatsappResto = String(
+  process.env.SITIO_WHATSAPP_RESTO || process.env.SITIO_WHATSAPP_ACTIVIDADES || "",
+).replace(/\D/g, "");
 const siteApi = String(process.env.SITIO_API_URL || "https://api.innovamf.com").replace(/\/$/, "");
 const siteCompany = String(process.env.SITIO_COMPANY_SLUG || "alpha-demo").trim() || "alpha-demo";
 
@@ -32,7 +37,9 @@ const server = createServer(async (req, res) => {
     });
     res.end(
       `window.AylluSite=${JSON.stringify({
-        whatsapp: whatsappPhone,
+        whatsapp: whatsappGlamping,
+        whatsappGlamping,
+        whatsappResto: whatsappResto || whatsappGlamping,
         api: siteApi,
         company: siteCompany,
       })};`,

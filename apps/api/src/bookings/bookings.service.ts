@@ -150,6 +150,7 @@ export class BookingsService {
       input,
     );
     this.validateHours(settings, startsAt, company.timezone);
+    this.assertOpenDates(settings, startsAt, endsAt, company.timezone);
     if (input.source !== "MANUAL") {
       await this.assertCapacity(companyId, settings, startsAt, endsAt);
       await this.assertDayCapacity(companyId, settings, startsAt, company.timezone);
@@ -221,6 +222,7 @@ export class BookingsService {
         where: { id: companyId },
         select: { timezone: true },
       });
+      this.assertOpenDates(settings, nextStarts, nextEnds, company.timezone);
       await this.assertCapacity(companyId, settings, nextStarts, nextEnds, id);
       await this.assertDayCapacity(companyId, settings, nextStarts, company.timezone, id);
     }
@@ -279,6 +281,17 @@ export class BookingsService {
     const settings = await this.ensureSettings(companyId);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       throw new BadRequestException("Usa una fecha YYYY-MM-DD");
+    }
+    if (this.normalizeClosedDates(settings.closedDates).includes(date)) {
+      return {
+        date,
+        durationMinutes: 0,
+        slots: [],
+        booked: 0,
+        maxPerDay: settings.maxPerDay,
+        remaining: 0,
+        closed: true,
+      };
     }
 
     const duration = await this.itemDuration(companyId, settings, serviceId, productId);
@@ -386,11 +399,18 @@ export class BookingsService {
       },
     });
 
-    const days: Record<string, Record<string, { unitCount: number; free: number; occupied: number }>> = {};
+    const closed = new Set(this.normalizeClosedDates(settings.closedDates));
+    const days: Record<
+      string,
+      Record<string, { unitCount: number; free: number; occupied: number; closed?: boolean }>
+    > = {};
     for (let day = startDay; day <= endDay; day = this.nextCalendarDay(day)) {
       days[day] = {};
+      const isClosed = closed.has(day);
       for (const place of places) {
-        days[day][place.id] = { unitCount: place.unitCount, free: place.unitCount, occupied: 0 };
+        days[day][place.id] = isClosed
+          ? { unitCount: place.unitCount, free: 0, occupied: place.unitCount, closed: true }
+          : { unitCount: place.unitCount, free: place.unitCount, occupied: 0, closed: false };
       }
     }
 
@@ -429,6 +449,7 @@ export class BookingsService {
         trackGuests: place.trackGuests ?? false,
       })),
       days,
+      closedDates: [...closed].filter((d) => d >= startDay && d <= endDay).sort(),
       from: startDay,
       to: endDay,
       horizonDays: horizon,
@@ -476,6 +497,7 @@ export class BookingsService {
       hours,
       items,
       maxPerDay: settings.maxPerDay,
+      closedDates: this.normalizeClosedDates(settings.closedDates),
     };
   }
 
@@ -495,7 +517,40 @@ export class BookingsService {
     return {
       ...settings,
       places: normalizeBookingPlaces(settings.places),
+      closedDates: this.normalizeClosedDates(settings.closedDates),
     };
+  }
+
+  private normalizeClosedDates(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    return [
+      ...new Set(
+        raw
+          .map((d) => String(d ?? "").trim())
+          .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)),
+      ),
+    ].sort();
+  }
+
+  private assertOpenDates(
+    settings: Awaited<ReturnType<BookingsService["ensureSettings"]>>,
+    startsAt: Date,
+    endsAt: Date,
+    timezone: string,
+  ) {
+    const closed = new Set(this.normalizeClosedDates(settings.closedDates));
+    if (!closed.size) return;
+    const startDay = this.calendarDateInZone(startsAt, timezone);
+    // Estadía: noches desde startsAt hasta el día anterior a endsAt (si endsAt es checkout).
+    // Para un día puntual (mismo día) solo se valida startsAt.
+    const endExclusive = this.calendarDateInZone(endsAt, timezone);
+    const lastNight =
+      endExclusive > startDay ? this.addCalendarDays(endExclusive, -1) : startDay;
+    for (let day = startDay; day <= lastNight; day = this.nextCalendarDay(day)) {
+      if (closed.has(day)) {
+        throw new BadRequestException(`El ${day} está cerrado a visitas y no admite reservas`);
+      }
+    }
   }
 
   private async resolveWindow(

@@ -1557,3 +1557,22 @@ body:has(.ayllu-m.is-map) {
     transform: translateX(-50%);
   }
 }
+
+.closed-panel .heading-subtitle{margin:0 0 18px;color:var(--muted);font-size:14px;line-height:1.55}
+.closed-cal{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:18px}
+.closed-cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.closed-cal-head strong{font-size:16px;text-transform:capitalize}
+.closed-cal-head button{width:36px;height:36px;border-radius:10px;background:var(--forest-light);font-size:22px;line-height:1}
+.closed-weekdays,.closed-days{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.closed-weekdays span{text-align:center;font-size:11px;color:var(--muted);padding:4px 0}
+.closed-empty{min-height:40px}
+.closed-day{min-height:40px;border-radius:10px;background:#f4f7f6;font-size:14px;font-weight:600}
+.closed-day.is-today{outline:2px solid var(--green)}
+.closed-day.is-closed{background:#ad493f;color:#fff}
+.closed-day:disabled{opacity:.35}
+.closed-legend{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin:14px 0 0}
+.closed-legend .swatch{width:14px;height:14px;border-radius:4px;display:inline-block}
+.closed-legend .swatch.closed{background:#ad493f}
+.closed-list{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:8px}
+.closed-list li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;background:#fff4f2;border-radius:12px;font-size:14px}
+.closed-list button{color:var(--green);font-weight:600;font-size:13px}

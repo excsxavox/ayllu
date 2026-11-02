@@ -83,6 +83,8 @@ export const bookingSettingsSchema = z.object({
   weeklyHours: bookingWeeklyHoursSchema.optional(),
   customFields: z.array(bookingCustomFieldSchema).max(20).optional(),
   places: z.array(bookingPlaceSchema).max(20).optional(),
+  /** Días cerrados (YYYY-MM-DD). No se reservan en web, bot ni móvil. */
+  closedDates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).max(366).optional(),
   confirmationMessage: z.string().max(800).optional().nullable(),
   cancelPolicy: z.string().max(800).optional().nullable(),
   bookableServiceIds: z.array(z.string().min(1)).optional(),

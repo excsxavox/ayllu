@@ -6,7 +6,24 @@
   let engine=createEngine();
   let today=engine.bounds().min;
   const state={step:1,service:'glamping',date:addDays(today,1),guests:2,nights:1,time:null,month:addDays(today,1).slice(0,7),extras:new Set(),name:'',receipt:null,error:'',agendaReady:false};
-  const waNumber=()=>String(window.AylluSite?.whatsapp||'15556310030').replace(/\D/g,'');
+  const waNumber=()=>String(window.AylluSite?.whatsappGlamping||window.AylluSite?.whatsapp||'15556310030').replace(/\D/g,'');
+  const waResto=()=>String(window.AylluSite?.whatsappResto||window.AylluSite?.whatsapp||waNumber()).replace(/\D/g,'');
+  function restoWhatsAppUrl(){
+    const en=window.AylluI18n?.locale?.()==='en';
+    const text=en
+      ?'Hi 🌿 I want to reserve a table at AYLLU Restaurant.\n\nCan you help me with availability?'
+      :'Hola 🌿 Quiero reservar una mesa en Restaurante AYLLU.\n\n¿Me ayudan con disponibilidad?';
+    return `https://wa.me/${waResto()}?text=${encodeURIComponent(text)}`;
+  }
+  function bindRestoWa(){
+    document.querySelectorAll('#resto-wa-cta, #resto-section-wa').forEach((el)=>{
+      el.addEventListener('click',(e)=>{
+        e.preventDefault();
+        window.open(restoWhatsAppUrl(),'_blank','noopener');
+      });
+    });
+  }
+  bindRestoWa();
   function whatsAppMessage(){
     const s=SERVICES[state.service],en=window.AylluI18n?.locale?.()==='en';
     const lines=en?[

@@ -1031,6 +1031,9 @@ export class BotService {
               : "",
             booking.confirmationMessage ? `Mensaje de confirmación: ${booking.confirmationMessage}` : "",
             booking.cancelPolicy ? `Cancelación: ${booking.cancelPolicy}` : "",
+            booking.closedDates?.length
+              ? `Días cerrados a visitas (no ofrezcas reserva esos días): ${booking.closedDates.join(", ")}`
+              : "",
             slotLines,
           ]
             .filter(Boolean)

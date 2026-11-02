@@ -623,6 +623,8 @@ model BookingSettings {
   weeklyHours          Json        @default("{}")
   customFields         Json        @default("[]")
   places               Json        @default("[]")
+  /** Días YYYY-MM-DD cerrados a visitas / reservas (web, bot y móvil). */
+  closedDates          String[]    @default([])
   confirmationMessage  String?
   cancelPolicy         String?
   bookableServiceIds   String[]    @default([])

@@ -7,7 +7,7 @@ export type OccupyBody = Record<string, unknown>;
 export type FloorOp =
   | { id: string; type: "occupy"; tempId: string; body: OccupyBody }
   | { id: string; type: "patch"; bookingId: string; body: Record<string, unknown> }
-  | { id: string; type: "settings"; places: unknown };
+  | { id: string; type: "settings"; places?: unknown; closedDates?: string[] };
 
 export function isOnline() {
   return typeof navigator === "undefined" || navigator.onLine;
@@ -68,9 +68,12 @@ export async function flushFloorQueue() {
         }
         await api(`/bookings/${id}`, { method: "PATCH", body: JSON.stringify(op.body) });
       } else {
+        const body: Record<string, unknown> = {};
+        if (op.places !== undefined) body.places = op.places;
+        if (op.closedDates !== undefined) body.closedDates = op.closedDates;
         await api("/bookings/settings", {
           method: "PATCH",
-          body: JSON.stringify({ places: op.places }),
+          body: JSON.stringify(body),
         });
       }
     } catch {

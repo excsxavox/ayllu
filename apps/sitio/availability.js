@@ -48,7 +48,15 @@ var AylluAvailability = (() => {
     });
     return SERVICES;
   }
+  function isClosedDay(day) {
+    if (liveAgenda?.days?.[day]) {
+      const cells = Object.values(liveAgenda.days[day]);
+      if (cells.some((c) => c && c.closed === true)) return true;
+    }
+    return Array.isArray(liveAgenda?.closedDates) && liveAgenda.closedDates.includes(day);
+  }
   function liveUnits(service, day) {
+    if (isClosedDay(day)) return [];
     const free = liveAgenda?.days?.[day]?.[service]?.free;
     if (typeof free !== 'number') return null;
     return Array.from({ length: Math.max(0, free) }, (_, i) => `${service}-${i + 1}`);
@@ -104,6 +112,10 @@ var AylluAvailability = (() => {
       if(s.type==='stay') {
         if(!Number.isInteger(q.nights)||q.nights<1||q.nights>7) return tx('av.nights', 'Elige entre 1 y 7 noches.');
         if(addDays(q.date,q.nights-1)>b.max) return tx('av.stayOver', 'La estancia supera las fechas disponibles en la agenda.');
+        const nights=Array.from({length:q.nights},(_,i)=>addDays(q.date,i));
+        if(nights.some(isClosedDay)) return tx('av.closed', 'Hay días cerrados a visitas en esas fechas. Elige otras.');
+      } else if(isClosedDay(q.date)) {
+        return tx('av.closed', 'Ese día está cerrado a visitas.');
       }
       return '';
     }
